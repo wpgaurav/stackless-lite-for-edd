@@ -4,6 +4,8 @@
 
 Fifteen free store tools for [Easy Digital Downloads](https://wordpress.org/plugins/easy-digital-downloads/) in one plugin. Switch on only what you use; switched-off modules load no code.
 
+**[Product page](https://gauravtiwari.org/product/stackless-lite-for-edd/)** · [Download the latest ZIP](https://gauravtiwari.org/wp-json/gt-plugin-updates/v1/plugins/stackless-lite-for-edd/download) · [Documentation](https://gauravtiwari.org/docs/stackless-for-edd/) · [Upgrade to Stackless for EDD](https://gauravtiwari.org/product/stackless-for-edd/)
+
 | Group | Modules |
 |---|---|
 | Catalog | Free Price Text, Custom Add to Cart Text, Sold Count, Min/Max Quantity, Hide Price Until Login, External Downloads, Product Details Table |
@@ -16,7 +18,7 @@ Customers also get an account page with their orders, downloads, profile and the
 
 ## Install
 
-1. Download `stackless-lite-edd-<version>.zip` from [Releases](../../releases).
+1. Download `stackless-lite-edd-<version>.zip` from [Releases](../../releases) or the [product page](https://gauravtiwari.org/product/stackless-lite-for-edd/).
 2. In WordPress, go to **Plugins → Add New → Upload Plugin**, upload the zip and activate it.
 3. Open **Stackless → Dashboard** and switch on the modules you want.
 

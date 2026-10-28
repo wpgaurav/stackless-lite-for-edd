@@ -42,6 +42,13 @@ Customers also get an account page with their orders, downloads, profile and the
 
 Lite does not track you or your customers and sends no data to the author. Once every 12 hours WordPress asks gauravtiwari.org whether a newer version of Lite exists (a plain request with no site details beyond what WordPress sends with any request).
 
+= Links =
+
+* [Product page and free download](https://gauravtiwari.org/product/stackless-lite-for-edd/)
+* [Documentation](https://gauravtiwari.org/docs/stackless-for-edd/)
+* [Source code on GitHub](https://github.com/wpgaurav/stackless-lite-for-edd)
+* [Stackless for EDD](https://gauravtiwari.org/product/stackless-for-edd/), the full plugin
+
 == Installation ==
 
 1. Install and activate Easy Digital Downloads 3.5 or newer.
