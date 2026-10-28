@@ -1,0 +1,139 @@
+/* Stackless for EDD: Stripe gateway */
+
+.stackless-stripe-payment-element {
+	min-height: 40px;
+	margin: 0.5em 0;
+}
+
+.stackless-stripe-errors:empty,
+.stackless-stripe-express-errors:empty {
+	display: none;
+}
+
+.stackless-stripe-errors,
+.stackless-stripe-express-errors {
+	margin: 0.5em 0;
+	color: #b32d2e;
+	font-size: 0.92em;
+}
+
+.stackless-stripe-test-notice,
+.stackless-stripe-save-notice {
+	margin: 0.5em 0;
+	font-size: 0.9em;
+	opacity: 0.85;
+}
+
+.stackless-stripe-test-notice code {
+	white-space: nowrap;
+}
+
+.stackless-stripe-new-method {
+	border: 0;
+	margin: 0;
+	padding: 0;
+}
+
+.stackless-stripe-new-method[hidden] {
+	display: none !important;
+}
+
+.stackless-stripe-saved-methods {
+	list-style: none;
+	margin: 0.5em 0 1em;
+	padding: 0;
+}
+
+.stackless-stripe-saved-methods li {
+	margin: 0 0 0.4em;
+}
+
+.stackless-stripe-saved-methods label,
+.stackless-stripe-save label {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5em;
+	cursor: pointer;
+}
+
+.stackless-stripe-processing {
+	position: relative;
+	opacity: 0.6;
+	pointer-events: none;
+}
+
+.stackless-stripe-express-wrap {
+	margin: 0 0 1.25em;
+}
+
+.stackless-stripe-express-wrap[hidden] {
+	display: none !important;
+}
+
+.stackless-stripe-express-product {
+	margin: 1em 0;
+	clear: both;
+}
+
+.stackless-stripe-express-terms {
+	margin: 0.5em 0 0;
+	font-size: 0.82em;
+	opacity: 0.8;
+}
+
+.stackless-stripe-express-separator {
+	display: flex;
+	align-items: center;
+	gap: 0.75em;
+	margin: 1em 0 0;
+	font-size: 0.85em;
+	text-transform: uppercase;
+	opacity: 0.7;
+}
+
+.stackless-stripe-express-separator::before,
+.stackless-stripe-express-separator::after {
+	content: "";
+	flex: 1;
+	border-top: 1px solid currentColor;
+	opacity: 0.3;
+}
+
+/* Account page → Payment methods */
+.stackless-stripe-methods__table {
+	width: 100%;
+	margin: 0 0 1em;
+}
+
+.stackless-stripe-methods__actions {
+	text-align: right;
+	white-space: nowrap;
+}
+
+.stackless-stripe-methods__actions form {
+	display: inline;
+	margin: 0 0 0 0.75em;
+}
+
+.stackless-stripe-default,
+.stackless-stripe-expired {
+	display: inline-block;
+	margin: 0 0 0 0.5em;
+	padding: 0 6px;
+	border: 1px solid currentColor;
+	border-radius: 2px;
+	font-size: 0.8em;
+	line-height: 1.6;
+	opacity: 0.8;
+}
+
+.stackless-stripe-expired {
+	color: #b32d2e;
+}
+
+.stackless-stripe-actions {
+	display: flex;
+	align-items: center;
+	gap: 1em;
+	margin: 1em 0 0;
+}

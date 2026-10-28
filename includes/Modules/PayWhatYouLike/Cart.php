@@ -277,10 +277,11 @@ final class Cart
         // phpcs:disable WordPress.Security.NonceVerification.Missing -- EDD verified the add-to-cart nonce or token; values are validated.
         if (wp_doing_ajax() && isset($_POST['post_data']) && is_string($_POST['post_data'])) {
             $fields = [];
-            parse_str(wp_unslash($_POST['post_data']), $fields);
-            return $fields;
+            // The serialized form is parsed first; every field is then sanitized below.
+            parse_str(wp_unslash($_POST['post_data']), $fields); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized
+            return map_deep($fields, 'sanitize_text_field');
         }
-        return wp_unslash($_POST);
+        return map_deep(wp_unslash($_POST), 'sanitize_text_field');
         // phpcs:enable WordPress.Security.NonceVerification.Missing
     }
 

@@ -3,16 +3,14 @@
  * Plugin Name: Stackless Lite for EDD
  * Plugin URI: https://gauravtiwari.org/product/stackless-lite-for-edd/
  * Description: Free store tools for Easy Digital Downloads: wishlists, saved carts, pay what you like, buy links, quantity limits, checkout consents and more. Switch on only what you use.
- * Version: 1.0.0
+ * Version: 1.2.0
  * Author: Gaurav Tiwari
  * Author URI: https://gauravtiwari.org
  * License: GPL-2.0-or-later
  * License URI: https://www.gnu.org/licenses/gpl-2.0.html
  * Text Domain: stackless-lite-edd
- * Domain Path: /languages
  * Requires at least: 6.7
  * Requires PHP: 8.0
- * Requires Plugins: easy-digital-downloads
  * Update URI: https://gauravtiwari.org/product/stackless-lite-for-edd/
  *
  * @package StacklessEDD
@@ -51,7 +49,7 @@ if (defined('STACKLESS_EDD_VERSION')
     return;
 }
 
-define('STACKLESS_EDD_VERSION', '1.0.0');
+define('STACKLESS_EDD_VERSION', '1.2.0');
 define('STACKLESS_EDD_LITE', true);
 define('STACKLESS_EDD_PLUGIN_FILE', __FILE__);
 define('STACKLESS_EDD_PLUGIN_PATH', plugin_dir_path(__FILE__));

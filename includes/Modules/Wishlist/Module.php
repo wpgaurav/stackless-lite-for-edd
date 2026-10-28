@@ -619,7 +619,7 @@ class Module extends \StacklessEDD\Core\Module
     {
         $this->enqueue();
         if (!defined('DONOTCACHEPAGE')) {
-            define('DONOTCACHEPAGE', true);
+            define('DONOTCACHEPAGE', true); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- the shared signal page-cache plugins read.
         }
         $share = isset($_GET['wishlist']) ? sanitize_text_field(wp_unslash($_GET['wishlist'])) : ''; // phpcs:ignore WordPress.Security.NonceVerification -- read-only view.
         if ($share !== '') {

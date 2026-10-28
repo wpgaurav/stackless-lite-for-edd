@@ -4,6 +4,11 @@ namespace StacklessEDD\Core;
 
 defined('ABSPATH') || exit;
 
+/**
+ * Easy Digital Downloads checks at runtime. The plugin header has no "Requires Plugins" line on
+ * purpose: WordPress matches it by folder slug, so EDD Pro (easy-digital-downloads-pro) would count
+ * as missing. Both editions define EDD_VERSION and EDD().
+ */
 final class Requirements
 {
     public static function met(): bool
@@ -19,7 +24,7 @@ final class Requirements
         $message = defined('EDD_VERSION')
             /* translators: 1: required Easy Digital Downloads version, 2: installed version */
             ? sprintf(__('Stackless Lite for EDD needs Easy Digital Downloads %1$s or newer. You have %2$s.', 'stackless-lite-edd'), STACKLESS_EDD_MIN_EDD, EDD_VERSION)
-            : __('Stackless Lite for EDD needs Easy Digital Downloads installed and active.', 'stackless-lite-edd');
+            : __('Stackless Lite for EDD needs Easy Digital Downloads (free or Pro) installed and active.', 'stackless-lite-edd');
         printf('<div class="notice notice-error"><p>%s</p></div>', esc_html($message));
     }
 }

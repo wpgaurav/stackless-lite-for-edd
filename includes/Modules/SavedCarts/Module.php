@@ -466,7 +466,7 @@ class Module extends \StacklessEDD\Core\Module
     public function shortcode($atts = []): string
     {
         if (!defined('DONOTCACHEPAGE')) {
-            define('DONOTCACHEPAGE', true);
+            define('DONOTCACHEPAGE', true); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- the shared signal page-cache plugins read.
         }
         return $this->render(false);
     }

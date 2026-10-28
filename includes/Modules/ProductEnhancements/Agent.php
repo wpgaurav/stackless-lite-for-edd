@@ -109,7 +109,7 @@ final class Agent
         ];
         [$data, $errors] = Repository::validate($downloadId, $next);
         if ($errors) {
-            throw new \InvalidArgumentException('Fix these fields: ' . implode('; ', $errors));
+            throw new \InvalidArgumentException(esc_html('Fix these fields: ' . implode('; ', $errors)));
         }
         if (Dispatcher::dryRun($input)) {
             return ['dry_run' => true, 'details' => $data];

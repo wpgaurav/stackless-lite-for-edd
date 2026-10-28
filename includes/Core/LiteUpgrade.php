@@ -34,8 +34,6 @@ final class LiteUpgrade
         add_filter('stackless_edd_settings_panel', [self::class, 'panel']);
         add_action('admin_enqueue_scripts', [self::class, 'assets'], 20);
         add_filter('plugin_action_links_' . plugin_basename(STACKLESS_EDD_PLUGIN_FILE), [self::class, 'actionLinks']);
-        // The site-copy pause guards renewals, gateway calls and module emails. Lite has none of those, so its notice stays off.
-        remove_action('admin_notices', [LiveStore::class, 'notice']);
     }
 
     /** @return array<string,array{title:string,description:string,group:string,icon:string,features:string[]}> */

@@ -335,7 +335,7 @@ final class Module extends \StacklessEDD\Core\Module
         }
 
         $labels = [];
-        $posted = isset($_POST[self::FIELD_PRICES]) && is_array($_POST[self::FIELD_PRICES]) ? wp_unslash($_POST[self::FIELD_PRICES]) : [];
+        $posted = isset($_POST[self::FIELD_PRICES]) && is_array($_POST[self::FIELD_PRICES]) ? map_deep(wp_unslash($_POST[self::FIELD_PRICES]), 'sanitize_text_field') : [];
         // phpcs:enable
         foreach ((array) $posted as $priceId => $value) {
             if (!is_numeric($priceId) || !is_string($value)) {

@@ -516,7 +516,7 @@ final class Module extends \StacklessEDD\Core\Module
         $target = wp_validate_redirect($target, '');
         if ($target !== '') {
             // shortcode-login.php prints this global into its edd_redirect field after this action.
-            $GLOBALS['edd_login_redirect'] = $target;
+            $GLOBALS['edd_login_redirect'] = $target; // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedVariableFound -- EDD's own global.
         }
     }
 

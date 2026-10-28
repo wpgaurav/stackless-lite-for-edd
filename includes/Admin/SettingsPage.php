@@ -86,10 +86,18 @@ final class SettingsPage
         $this->hooks[] = (string) add_submenu_page(self::PARENT, __('Stackless modules', 'stackless-lite-edd'), __('Dashboard', 'stackless-lite-edd'), self::CAP, self::PARENT, [$this, 'renderDashboard']);
     }
 
+    /** The Emails screen exists in builds with a module that sends email; Lite has none. */
+    public static function hasEmails(): bool
+    {
+        return !defined('STACKLESS_EDD_LITE');
+    }
+
     public function menuBottom(): void
     {
         $this->hooks[] = (string) add_submenu_page(self::PARENT, __('Stackless settings', 'stackless-lite-edd'), __('Settings', 'stackless-lite-edd'), self::CAP, self::SETTINGS, [$this, 'renderSettings']);
-        $this->hooks[] = (string) add_submenu_page(self::PARENT, __('Stackless emails', 'stackless-lite-edd'), __('Emails', 'stackless-lite-edd'), self::CAP, self::EMAILS, [$this, 'renderEmails']);
+        if (self::hasEmails()) {
+            $this->hooks[] = (string) add_submenu_page(self::PARENT, __('Stackless emails', 'stackless-lite-edd'), __('Emails', 'stackless-lite-edd'), self::CAP, self::EMAILS, [$this, 'renderEmails']);
+        }
         if ($this->modules->get(self::LICENSE_MODULE)) {
             $this->hooks[] = (string) add_submenu_page(self::PARENT, __('Stackless license', 'stackless-lite-edd'), __('License', 'stackless-lite-edd'), self::CAP, self::LICENSE, [$this, 'renderLicense']);
         }
@@ -231,8 +239,10 @@ final class SettingsPage
         $links = [
             self::PARENT => ['layout-dashboard', __('Dashboard', 'stackless-lite-edd'), self::url()],
             self::SETTINGS => ['settings', __('Settings', 'stackless-lite-edd'), admin_url('admin.php?page=' . self::SETTINGS)],
-            self::EMAILS => ['mail', __('Emails', 'stackless-lite-edd'), admin_url('admin.php?page=' . self::EMAILS)],
         ];
+        if (self::hasEmails()) {
+            $links[self::EMAILS] = ['mail', __('Emails', 'stackless-lite-edd'), admin_url('admin.php?page=' . self::EMAILS)];
+        }
         if ($this->modules->get(self::LICENSE_MODULE)) {
             $links[self::LICENSE] = ['license', __('License', 'stackless-lite-edd'), admin_url('admin.php?page=' . self::LICENSE)];
         }

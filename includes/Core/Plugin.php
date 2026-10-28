@@ -32,7 +32,6 @@ final class Plugin
 
     public function boot(): void
     {
-        load_plugin_textdomain('stackless-lite-edd', false, dirname(plugin_basename(STACKLESS_EDD_PLUGIN_FILE)) . '/languages');
         Assets::register();
         LiveStore::boot();
         Notices::boot();

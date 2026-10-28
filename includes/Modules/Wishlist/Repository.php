@@ -2,6 +2,8 @@
 
 namespace StacklessEDD\Modules\Wishlist;
 
+// phpcs:disable WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- wishlists live in two custom tables; each read is per list and changes on every add or remove, so there is no shared result to cache.
+
 defined('ABSPATH') || exit;
 
 /**
@@ -66,7 +68,7 @@ final class Repository
     {
         global $wpdb;
         $table = self::listsTable();
-        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE user_id = %d ORDER BY id ASC LIMIT 1", $user_id), ARRAY_A); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        $row = $wpdb->get_row($wpdb->prepare('SELECT * FROM %i WHERE user_id = %d ORDER BY id ASC LIMIT 1', $table, $user_id), ARRAY_A);
         if ($row || !$create || $user_id <= 0) {
             return $row ?: null;
         }
@@ -82,7 +84,7 @@ final class Repository
         }
         $hash = self::hashToken($token);
         $table = self::listsTable();
-        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE guest_hash = %s AND user_id = 0 LIMIT 1", $hash), ARRAY_A); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        $row = $wpdb->get_row($wpdb->prepare('SELECT * FROM %i WHERE guest_hash = %s AND user_id = 0 LIMIT 1', $table, $hash), ARRAY_A);
         if ($row || !$create) {
             return $row ?: null;
         }
@@ -97,7 +99,7 @@ final class Repository
             return null;
         }
         $table = self::listsTable();
-        $row = $wpdb->get_row($wpdb->prepare("SELECT * FROM {$table} WHERE share_key = %s LIMIT 1", $key), ARRAY_A); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        $row = $wpdb->get_row($wpdb->prepare('SELECT * FROM %i WHERE share_key = %s LIMIT 1', $table, $key), ARRAY_A);
         return $row ?: null;
     }
 
@@ -125,7 +127,7 @@ final class Repository
     {
         global $wpdb;
         $table = self::itemsTable();
-        $rows = $wpdb->get_results($wpdb->prepare("SELECT download_id, price_id FROM {$table} WHERE wishlist_id = %d ORDER BY id DESC", $list_id), ARRAY_A); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        $rows = $wpdb->get_results($wpdb->prepare('SELECT download_id, price_id FROM %i WHERE wishlist_id = %d ORDER BY id DESC', $table, $list_id), ARRAY_A);
         return Merge::normalise(is_array($rows) ? $rows : []);
     }
 
@@ -133,14 +135,14 @@ final class Repository
     {
         global $wpdb;
         $table = self::itemsTable();
-        return (int) $wpdb->get_var($wpdb->prepare("SELECT COUNT(*) FROM {$table} WHERE wishlist_id = %d", $list_id)); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        return (int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM %i WHERE wishlist_id = %d', $table, $list_id));
     }
 
     public function has(int $list_id, int $download_id, int $price_id): bool
     {
         global $wpdb;
         $table = self::itemsTable();
-        return (bool) $wpdb->get_var($wpdb->prepare("SELECT 1 FROM {$table} WHERE wishlist_id = %d AND download_id = %d AND price_id = %d", $list_id, $download_id, $price_id)); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        return (bool) $wpdb->get_var($wpdb->prepare('SELECT 1 FROM %i WHERE wishlist_id = %d AND download_id = %d AND price_id = %d', $table, $list_id, $download_id, $price_id));
     }
 
     /** Insert ignoring duplicates. Returns true when the pair is in the list afterwards. */
@@ -149,7 +151,8 @@ final class Repository
         global $wpdb;
         $table = self::itemsTable();
         $wpdb->query($wpdb->prepare(
-            "INSERT IGNORE INTO {$table} (wishlist_id, download_id, price_id, created_at) VALUES (%d, %d, %d, %s)", // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+            'INSERT IGNORE INTO %i (wishlist_id, download_id, price_id, created_at) VALUES (%d, %d, %d, %s)',
+            $table,
             $list_id,
             $download_id,
             $price_id,
@@ -202,14 +205,16 @@ final class Repository
         $lists = self::listsTable();
         $items = self::itemsTable();
         $cutoff = gmdate('Y-m-d H:i:s', time() - max(1, $days) * DAY_IN_SECONDS);
-        $ids = $wpdb->get_col($wpdb->prepare("SELECT id FROM {$lists} WHERE user_id = 0 AND updated_at < %s LIMIT %d", $cutoff, $batch)); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- table name.
+        $ids = $wpdb->get_col($wpdb->prepare('SELECT id FROM %i WHERE user_id = 0 AND updated_at < %s LIMIT %d', $lists, $cutoff, $batch));
         $ids = array_map('intval', is_array($ids) ? $ids : []);
         if (!$ids) {
             return 0;
         }
-        $in = implode(',', $ids);
-        $wpdb->query("DELETE FROM {$items} WHERE wishlist_id IN ({$in})"); // phpcs:ignore WordPress.DB.PreparedSQL -- integers only.
-        $wpdb->query("DELETE FROM {$lists} WHERE id IN ({$in})"); // phpcs:ignore WordPress.DB.PreparedSQL -- integers only.
+        $in = implode(',', array_fill(0, count($ids), '%d'));
+        // phpcs:disable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber -- $in holds only %d placeholders.
+        $wpdb->query($wpdb->prepare("DELETE FROM %i WHERE wishlist_id IN ({$in})", $items, ...$ids));
+        $wpdb->query($wpdb->prepare("DELETE FROM %i WHERE id IN ({$in})", $lists, ...$ids));
+        // phpcs:enable WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber
         return count($ids);
     }
 

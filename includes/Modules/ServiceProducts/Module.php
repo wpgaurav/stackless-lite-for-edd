@@ -49,8 +49,10 @@ class Module extends \StacklessEDD\Core\Module
                 'id' => 'stackless_edd_service_products_heading',
                 'type' => 'text',
                 'title' => __('Heading', 'stackless-lite-edd'),
+                /* translators: %s: placeholder that is replaced with the download name. */
                 'desc' => __('Shown above the instructions. %s is replaced with the download name.', 'stackless-lite-edd'),
                 'desc_tip' => true,
+                /* translators: %s: download name */
                 'default' => __('%s: what happens next', 'stackless-lite-edd'),
             ],
             [
@@ -271,6 +273,7 @@ class Module extends \StacklessEDD\Core\Module
             $lines[] = ['product_id' => (int) $item->product_id, 'is_service' => $this->isServiceLine($item)];
         }
         $blocks = [];
+        /* translators: %s: download name */
         $heading = (string) $this->option('heading', __('%s: what happens next', 'stackless-lite-edd'));
         [$first, $last] = $this->names($order);
         foreach (Links::serviceProducts($lines) as $id) {
@@ -407,7 +410,10 @@ class Module extends \StacklessEDD\Core\Module
         if (!$blocks) {
             return $content;
         }
-        $plain = (string) apply_filters('edd_email_template', edd_get_option('email_template', 'default')) === 'none';
+        // EDD's email class applies its own edd_email_template filter.
+        $emails = function_exists('EDD') ? EDD()->emails : null;
+        $template = is_object($emails) && method_exists($emails, 'get_template') ? (string) $emails->get_template() : (string) edd_get_option('email_template', 'default');
+        $plain = $template === 'none';
         return $content . stackless_edd_get_template_html($plain ? 'service_products/email-plain.php' : 'service_products/email.php', ['blocks' => $blocks, 'order' => $order]);
     }
 }

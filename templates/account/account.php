@@ -14,9 +14,9 @@ defined('ABSPATH') || exit;
 <div class="stackless-account">
     <nav class="stackless-account__nav" aria-label="<?php esc_attr_e('Account', 'stackless-lite-edd'); ?>">
         <ul>
-            <?php foreach ($tabs as $tab_id => $tab) : ?>
+            <?php foreach ($tabs as $stackless_edd_tab_id => $tab) : ?>
                 <li>
-                    <a href="<?php echo esc_url(stackless_edd_account_url($tab_id)); ?>"<?php echo $tab_id === $current ? ' aria-current="page"' : ''; ?>>
+                    <a href="<?php echo esc_url(stackless_edd_account_url($stackless_edd_tab_id)); ?>"<?php echo $stackless_edd_tab_id === $current ? ' aria-current="page"' : ''; ?>>
                         <?php echo \StacklessEDD\Admin\Icons::svg($tab['icon'], 18); // phpcs:ignore WordPress.Security.EscapeOutput -- local SVG. ?>
                         <span><?php echo esc_html($tab['title']); ?></span>
                     </a>

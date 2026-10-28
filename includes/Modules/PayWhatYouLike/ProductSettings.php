@@ -241,7 +241,7 @@ final class ProductSettings
         };
         $presets = [];
         if (isset($_POST[self::FIELD . '_presets']) && is_array($_POST[self::FIELD . '_presets'])) {
-            foreach (wp_unslash($_POST[self::FIELD . '_presets']) as $value) {
+            foreach (map_deep(wp_unslash($_POST[self::FIELD . '_presets']), 'sanitize_text_field') as $value) {
                 if (is_scalar($value)) {
                     $presets[] = sanitize_text_field((string) $value);
                 }
@@ -254,8 +254,8 @@ final class ProductSettings
             'max' => $text(self::FIELD . '_max'),
             'presets' => $presets,
         ];
-        $rows = isset($_POST[self::FIELD . '_var']) && is_array($_POST[self::FIELD . '_var']) ? wp_unslash($_POST[self::FIELD . '_var']) : [];
-        $present = isset($_POST[self::FIELD . '_var_present']) && is_array($_POST[self::FIELD . '_var_present']) ? array_keys(wp_unslash($_POST[self::FIELD . '_var_present'])) : [];
+        $rows = isset($_POST[self::FIELD . '_var']) && is_array($_POST[self::FIELD . '_var']) ? map_deep(wp_unslash($_POST[self::FIELD . '_var']), 'sanitize_text_field') : [];
+        $present = isset($_POST[self::FIELD . '_var_present']) && is_array($_POST[self::FIELD . '_var_present']) ? array_keys(map_deep(wp_unslash($_POST[self::FIELD . '_var_present']), 'sanitize_text_field')) : [];
         // phpcs:enable WordPress.Security.NonceVerification.Missing
 
         $messages = [];

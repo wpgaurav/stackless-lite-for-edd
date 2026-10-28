@@ -76,7 +76,7 @@ final class Price
      */
     public static function isZeroFormatted(string $formatted): bool
     {
-        $text = html_entity_decode(strip_tags($formatted), ENT_QUOTES, 'UTF-8');
+        $text = html_entity_decode(wp_strip_all_tags($formatted), ENT_QUOTES, 'UTF-8');
         return preg_match('/[0-9]/', $text) === 1 && preg_match('/[1-9]/', $text) === 0;
     }
 

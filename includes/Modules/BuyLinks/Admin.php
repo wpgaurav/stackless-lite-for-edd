@@ -44,8 +44,11 @@ final class Admin
     private static function extraOptions(int $exclude): string
     {
         $html = '';
-        $posts = get_posts(['post_type' => 'download', 'post_status' => ['publish', 'private'], 'numberposts' => 300, 'orderby' => 'title', 'order' => 'ASC', 'exclude' => [$exclude], 'suppress_filters' => false]);
+        $posts = get_posts(['post_type' => 'download', 'post_status' => ['publish', 'private'], 'numberposts' => 300, 'orderby' => 'title', 'order' => 'ASC', 'suppress_filters' => false]);
         foreach ($posts as $post) {
+            if ((int) $post->ID === (int) $exclude) {
+                continue;
+            }
             $title = wp_strip_all_tags(get_the_title($post));
             $prices = edd_has_variable_prices($post->ID) ? (array) edd_get_variable_prices($post->ID) : [];
             if (!$prices) {

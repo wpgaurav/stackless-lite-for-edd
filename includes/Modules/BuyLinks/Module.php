@@ -127,7 +127,7 @@ final class Module extends \StacklessEDD\Core\Module
 
         nocache_headers();
         if (!defined('DONOTCACHEPAGE')) {
-            define('DONOTCACHEPAGE', true);
+            define('DONOTCACHEPAGE', true); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedConstantFound -- the shared signal page-cache plugins read.
         }
 
         $params = ['items' => $raw, 'coupon' => $couponRaw, 'clear' => in_array($clearParam, ['0', '1'], true) ? $clearParam : '', 'to' => in_array($to, ['checkout', 'cart'], true) ? $to : '', 'exp' => $exp];

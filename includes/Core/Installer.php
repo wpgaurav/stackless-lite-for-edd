@@ -233,7 +233,8 @@ final class Installer
                     $reasons[$reason] = true;
                 }
             }
-            throw new \RuntimeException(sprintf('Table %s was not created.%s', implode(', ', $missing), $reasons ? ' Database error: ' . implode('; ', array_keys($reasons)) : ''));
+            // The message is stored in the failures option and escaped where the admin notice prints it.
+            throw new \RuntimeException(sprintf('Table %s was not created.%s', implode(', ', $missing), $reasons ? ' Database error: ' . implode('; ', array_keys($reasons)) : '')); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped
         }
     }
 
@@ -250,7 +251,7 @@ final class Installer
     private static function tableExists(string $table): bool
     {
         global $wpdb;
-        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table)));
+        $found = $wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $wpdb->esc_like($table))); // phpcs:ignore WordPress.DB.DirectDatabaseQuery.DirectQuery, WordPress.DB.DirectDatabaseQuery.NoCaching -- install check that must see the live schema.
         // Case-insensitive: lower_case_table_names can lowercase what SHOW TABLES returns.
         return is_string($found) && strcasecmp($found, $table) === 0;
     }

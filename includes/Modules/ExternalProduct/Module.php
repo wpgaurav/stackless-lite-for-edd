@@ -525,7 +525,7 @@ final class Module extends \StacklessEDD\Core\Module
             delete_post_meta($postId, self::META_ENABLED);
         }
 
-        $url = isset($_POST[self::META_URL]) ? esc_url_raw(trim(wp_unslash((string) $_POST[self::META_URL])), ['http', 'https']) : '';
+        $url = isset($_POST[self::META_URL]) ? esc_url_raw(wp_unslash($_POST[self::META_URL]), ['http', 'https']) : '';
         if ($url !== '' && Link::validUrl($url)) {
             update_post_meta($postId, self::META_URL, $url);
         } else {

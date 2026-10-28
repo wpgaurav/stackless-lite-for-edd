@@ -304,7 +304,7 @@ final class Fields
             printf(
                 '<label for="%1$s"><input type="checkbox" name="%1$s" id="%1$s" value="1" class="%2$s"%3$s%4$s> %5$s</label>%6$s',
                 esc_attr($id),
-                $class,
+                esc_attr($class),
                 checked($value, 'yes', false),
                 $attrs, // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in attributes().
                 wp_kses_post($field['desc']),
@@ -356,13 +356,13 @@ final class Fields
                 break;
             case 'single_select_page':
                 $dropdown = wp_dropdown_pages([
-                    'name' => $id,
-                    'id' => $id,
+                    'name' => esc_attr($id),
+                    'id' => esc_attr($id),
                     'echo' => false,
                     'selected' => absint($value),
                     'show_option_none' => ' ',
                     'option_none_value' => '0',
-                    'class' => (string) $field['class'],
+                    'class' => esc_attr((string) $field['class']),
                 ]);
                 echo $dropdown; // phpcs:ignore WordPress.Security.EscapeOutput -- core markup.
                 break;
@@ -376,7 +376,7 @@ final class Fields
                     esc_attr($input),
                     esc_attr($id),
                     esc_attr(is_scalar($value) ? (string) $value : ''),
-                    $input === 'number' ? 'small-text ' . $class : 'regular-text ' . $class,
+                    esc_attr(($input === 'number' ? 'small-text ' : 'regular-text ') . $class),
                     $input === 'password' ? ' autocomplete="new-password"' : '',
                     $attrs // phpcs:ignore WordPress.Security.EscapeOutput
                 );
