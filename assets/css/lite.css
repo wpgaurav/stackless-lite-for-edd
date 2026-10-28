@@ -1,0 +1,16 @@
+/* Stackless Lite for EDD: locked Pro cards, the Pro details view and the Upgrade link. Same rules as admin.css: radius 4px or less, 40px controls. */
+.stackless-badge--pro { border-color: color-mix(in srgb, var(--stackless-accent) 40%, #fff); background: var(--stackless-accent-soft); color: var(--stackless-accent); font-weight: 600; }
+.stackless-card--locked { background: #fbfbfc; }
+.stackless-card--locked .stackless-card__title { color: var(--stackless-text); }
+.stackless-header__link--upgrade, .stackless-header__link--upgrade:hover { color: var(--stackless-accent); font-weight: 600; }
+.stackless-pro-details { padding-bottom: 20px; }
+.stackless-pro-details__title { margin: 20px 0 8px; font-size: 14px; }
+.stackless-pro-details__features { margin: 0 0 16px; }
+.stackless-pro-details__features li { display: flex; gap: 8px; align-items: flex-start; margin: 0 0 8px; line-height: 1.5; }
+.stackless-pro-details__features .stackless-icon { margin-top: 3px; color: var(--stackless-accent); }
+.stackless-pro-details__note { color: var(--stackless-muted); max-width: 720px; }
+.stackless-pro-details__actions .button-primary { min-height: var(--stackless-control-h); line-height: calc(var(--stackless-control-h) - 2px); padding: 0 18px; border-radius: var(--stackless-radius-sm); }
+.stackless-pro-intro { margin: 40px 0 0; padding-top: 24px; border-top: 1px solid var(--stackless-border); }
+.stackless-pro-intro h2 { margin: 0 0 4px; font-size: 16px; }
+.stackless-pro-intro p { margin: 0; color: var(--stackless-muted); max-width: 720px; }
+.stackless-pro-intro[hidden] { display: none; }

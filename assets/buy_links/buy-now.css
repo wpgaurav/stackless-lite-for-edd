@@ -1,0 +1,5 @@
+/* Stackless for EDD: Buy now button beside the Purchase button. */
+.edd_download_purchase_form .stackless-buy-now{display:inline-block;margin-top:.5em}
+.edd_purchase_submit_wrapper + .stackless-buy-now,.edd_download_purchase_form > .stackless-buy-now{margin-left:0}
+.stackless-buy-now:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+@media (max-width:480px){.edd_download_purchase_form .stackless-buy-now{width:100%}}

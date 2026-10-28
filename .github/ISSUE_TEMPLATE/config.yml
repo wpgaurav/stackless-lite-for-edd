@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://gauravtiwari.org/docs/stackless-for-edd/
+    about: Setup guides for every module.
+  - name: Security report
+    url: https://github.com/wpgaurav/stackless-lite-for-edd/security/advisories/new
+    about: Report security problems privately.
