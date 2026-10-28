@@ -1,3 +1,5 @@
+<img src=".github/assets/icon-256x256.png" width="96" height="96" alt="Stackless Lite for EDD logo">
+
 # Stackless Lite for EDD
 
 Fifteen free store tools for [Easy Digital Downloads](https://wordpress.org/plugins/easy-digital-downloads/) in one plugin. Switch on only what you use; switched-off modules load no code.
