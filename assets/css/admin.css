@@ -54,6 +54,7 @@
 .stackless-card__foot { display: flex; align-items: center; gap: 8px; min-height: 20px; }
 .stackless-card__link { display: inline-flex; align-items: center; gap: 2px; margin-left: auto; font-weight: 600; text-decoration: none; color: var(--stackless-accent); }
 .stackless-card__link[hidden] { display: none; }
+.stackless-card__also { margin: 0; color: #007017; font-weight: 500; }
 .stackless-card__blocked { display: inline-flex; align-items: center; gap: 6px; color: #b32d2e; font-weight: 500; }
 .stackless-card[hidden], .stackless-group[hidden] { display: none; }
 .stackless-empty { color: var(--stackless-muted); margin-top: 24px; }

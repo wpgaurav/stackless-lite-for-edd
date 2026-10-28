@@ -4,7 +4,7 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.2.0
+Stable tag: 1.2.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -113,6 +113,10 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 1.2.1 =
+* Checkout: a logged-in buyer's name is filled in from their earlier orders. Their account keeps the name typed at checkout when it had none, so they don't type it again on the next purchase.
+* Stackless dashboard: switching on a module that needs another one switches that one on too and says so. "Needs …" notes update right away, without a page reload.
 
 = 1.2.0 =
 * Paddle and Stripe: set up the webhook in one click from the gateway settings, for live and sandbox or test mode. Stackless creates the endpoint in your Paddle or Stripe account (or repairs one that already points at your store) and saves the secret for you.

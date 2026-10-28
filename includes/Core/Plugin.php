@@ -36,6 +36,7 @@ final class Plugin
         LiveStore::boot();
         Notices::boot();
         Account::boot();
+        BuyerName::boot();
         $this->modules->discover();
         Installer::maybeUpgrade($this->modules);
         $this->modules->bootEnabled();

@@ -14,7 +14,7 @@ Fifteen free store tools for [Easy Digital Downloads](https://wordpress.org/plug
 
 Customers also get an account page with their orders, downloads, profile and the tabs your modules add.
 
-**Requires** WordPress 6.7+, PHP 8.0+ and Easy Digital Downloads 3.5+. **Version** 1.2.0. **License** GPL-2.0-or-later.
+**Requires** WordPress 6.7+, PHP 8.0+ and Easy Digital Downloads 3.5+. **Version** 1.2.1. **License** GPL-2.0-or-later.
 
 ## Install
 

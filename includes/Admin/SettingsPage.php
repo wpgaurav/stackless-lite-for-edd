@@ -127,6 +127,7 @@ final class SettingsPage
         wp_localize_script('stackless-edd-admin', 'stacklessEddAdmin', [
             'ajaxUrl' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('stackless_edd_toggle_module'),
+            'icon' => Icons::svg('info-circle', 16),
             'i18n' => [
                 'on' => __('On', 'stackless-lite-edd'),
                 'off' => __('Off', 'stackless-lite-edd'),
@@ -151,20 +152,49 @@ final class SettingsPage
             wp_send_json_error(['message' => __('Unknown module.', 'stackless-lite-edd')], 400);
         }
         $on = !empty($_POST['enabled']) && $_POST['enabled'] !== 'false';
-        // Change only this module's entry, re-read right before the write (concurrent toggles).
+        $before = $this->modules->enabledIds();
+        // Change only this module's entry (and, switching on, the modules it needs), re-read right
+        // before the write (concurrent toggles).
         $ids = $this->modules->setModuleEnabled($id, $on);
         update_option('stackless_edd_flush_rewrite', 1);
         // Run install() for modules switched on for the first time (tables, schedules).
-        if ($on) {
+        $added = array_values(array_diff($ids, $before));
+        foreach ($on ? array_unique(array_merge($added, [$id])) : [] as $addedId) {
+            $addedModule = $this->modules->get($addedId);
+            if (!$addedModule) {
+                continue;
+            }
             try {
-                $module->install();
+                $addedModule->install();
             } catch (\Throwable $e) {
-                \StacklessEDD\Core\Logger::log($id, 'Install failed: ' . $e->getMessage(), 'error');
+                \StacklessEDD\Core\Logger::log($addedId, 'Install failed: ' . $e->getMessage(), 'error');
             }
         }
+        // Every card whose switch or "Needs …" note changed, so the dashboard is right without a reload.
+        $cards = [];
+        foreach ($this->modules->all() as $cardId => $cardModule) {
+            $cardOn = in_array($cardId, $ids, true);
+            $wasOn = in_array($cardId, $before, true);
+            $note = $this->modules->dependencyNote($cardId, $ids);
+            if ($cardId !== $id && $cardOn === $wasOn && $note === $this->modules->dependencyNote($cardId, $before)) {
+                continue;
+            }
+            $cards[$cardId] = [
+                'enabled' => $cardOn,
+                'settingsUrl' => ($cardOn && $cardModule->settingsFields()) ? self::url($cardId) : '',
+                'note' => $note,
+            ];
+        }
+        $also = array_values(array_filter(array_map(function (string $addedId) use ($id): string {
+            $addedModule = $this->modules->get($addedId);
+            return $addedId !== $id && $addedModule ? $addedModule->title() : '';
+        }, $added)));
         wp_send_json_success([
             'enabled' => $on,
             'settingsUrl' => ($on && $module->settingsFields()) ? self::url($id) : '',
+            'cards' => $cards,
+            /* translators: %s: comma-separated module names */
+            'also' => $also ? sprintf(__('Also switched on %s, which this module needs.', 'stackless-lite-edd'), implode(', ', $also)) : '',
             'count' => count($ids),
             'total' => count($this->modules->all()),
         ]);
@@ -345,7 +375,8 @@ final class SettingsPage
     private function card(string $id, Module $module): void
     {
         $on = $this->modules->isEnabled($id);
-        $blocked = $on ? $this->modules->blockedReason($id) : null;
+        $needs = $this->modules->dependencyNote($id, $this->modules->enabledIds());
+        $blocked = $on ? ($needs ?? $this->modules->blockedReason($id)) : null;
         $settings = $on && $module->settingsFields() ? self::url($id) : '';
         $switchId = 'stackless-switch-' . $id;
         printf(
@@ -370,7 +401,7 @@ final class SettingsPage
         echo '<p class="stackless-card__desc">' . esc_html($module->description()) . '</p>';
         echo '<div class="stackless-card__foot">';
         if ($blocked) {
-            echo '<span class="stackless-card__blocked">' . Icons::svg('info-circle', 16) . esc_html($blocked) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput
+            echo '<span class="stackless-card__blocked"' . ($needs ? ' data-needs' : '') . '>' . Icons::svg('info-circle', 16) . esc_html($blocked) . '</span>'; // phpcs:ignore WordPress.Security.EscapeOutput
         }
         echo Documentation::link($id, __('Docs', 'stackless-lite-edd'), 'stackless-card__docs'); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped in Documentation::link().
         printf(

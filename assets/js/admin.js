@@ -40,6 +40,34 @@
     });
   });
 
+  // One card's switch, settings link and "Needs …" note, from the server's view after a toggle.
+  function update(card, state) {
+    var on = !!state.enabled;
+    card.classList.toggle('is-on', on);
+    card.dataset.state = on ? 'on' : 'off';
+    var sw = card.querySelector('.stackless-switch');
+    if (sw) { sw.setAttribute('aria-checked', on ? 'true' : 'false'); }
+    var link = card.querySelector('.stackless-card__link');
+    if (link) {
+      link.hidden = !state.settingsUrl;
+      if (state.settingsUrl) { link.href = state.settingsUrl; }
+    }
+    var also = card.querySelector('.stackless-card__also');
+    if (also) { also.remove(); }
+    var blocked = card.querySelector('.stackless-card__blocked');
+    if (blocked && (!on || state.note || blocked.hasAttribute('data-needs'))) {
+      blocked.remove();
+    }
+    if (on && state.note) {
+      blocked = document.createElement('span');
+      blocked.className = 'stackless-card__blocked';
+      blocked.setAttribute('data-needs', '');
+      blocked.innerHTML = cfg.icon || '';
+      blocked.appendChild(document.createTextNode(state.note));
+      card.querySelector('.stackless-card__foot').prepend(blocked);
+    }
+  }
+
   root.addEventListener('click', function (e) {
     var sw = e.target.closest('.stackless-switch');
     if (!sw || sw.getAttribute('aria-busy') === 'true') {
@@ -60,16 +88,21 @@
       .then(function (r) { return r.json(); })
       .then(function (res) {
         if (!res || !res.success) { throw new Error('save'); }
-        var on = !!res.data.enabled;
-        card.classList.toggle('is-on', on);
-        card.dataset.state = on ? 'on' : 'off';
-        var link = card.querySelector('.stackless-card__link');
-        if (link) {
-          link.hidden = !res.data.settingsUrl;
-          if (res.data.settingsUrl) { link.href = res.data.settingsUrl; }
+        var cards = res.data.cards || {};
+        if (!cards[sw.dataset.module]) {
+          cards[sw.dataset.module] = { enabled: !!res.data.enabled, settingsUrl: res.data.settingsUrl, note: null };
         }
-        var blocked = card.querySelector('.stackless-card__blocked');
-        if (blocked && !on) { blocked.remove(); }
+        Object.keys(cards).forEach(function (id) {
+          var other = root.querySelector('.stackless-card[data-module="' + id + '"]');
+          if (other) { update(other, cards[id]); }
+        });
+        if (res.data.also) {
+          var also = document.createElement('p');
+          also.className = 'stackless-card__also';
+          also.setAttribute('role', 'status');
+          also.textContent = res.data.also;
+          card.querySelector('.stackless-card__desc').after(also);
+        }
         if (count && cfg.i18n) {
           count.textContent = cfg.i18n.count.replace('%1$d', res.data.count).replace('%2$d', res.data.total);
         }

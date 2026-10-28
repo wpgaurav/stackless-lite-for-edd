@@ -107,9 +107,57 @@ final class ModuleRegistry
         wp_cache_delete(self::OPTION, 'options');
         $stored = get_option(self::OPTION, null);
         $ids = is_array($stored) ? array_values(array_filter(array_map('strval', $stored))) : $this->enabledIds();
-        $ids = $on ? array_values(array_unique(array_merge($ids, [$id]))) : array_values(array_diff($ids, [$id]));
+        $ids = $on ? array_values(array_unique(array_merge($ids, self::withDependencies($id, $this->dependencyMap())))) : array_values(array_diff($ids, [$id]));
         $this->setEnabled($ids);
         return $this->enabledIds();
+    }
+
+    /** @return array<string, string[]> module id => ids of the modules it needs */
+    public function dependencyMap(): array
+    {
+        return array_map(static function (Module $module): array {
+            return $module->dependencies();
+        }, $this->modules);
+    }
+
+    /**
+     * Pure: a module and every module it needs, directly or through another one.
+     *
+     * @param array<string, string[]> $map module id => ids of the modules it needs
+     * @return string[]
+     */
+    public static function withDependencies(string $id, array $map): array
+    {
+        $ids = [];
+        $queue = [$id];
+        while ($queue) {
+            $next = array_shift($queue);
+            if (in_array($next, $ids, true)) {
+                continue;
+            }
+            $ids[] = $next;
+            foreach ($map[$next] ?? [] as $dep) {
+                $queue[] = (string) $dep;
+            }
+        }
+        return $ids;
+    }
+
+    /** "Needs the … module enabled." for a switched-on module whose dependency is off, else null. */
+    public function dependencyNote(string $id, array $enabled): ?string
+    {
+        $module = $this->modules[$id] ?? null;
+        if (!$module || !in_array($id, $enabled, true)) {
+            return null;
+        }
+        foreach ($module->dependencies() as $dep) {
+            if (!in_array($dep, $enabled, true)) {
+                $title = isset($this->modules[$dep]) ? $this->modules[$dep]->title() : $dep;
+                /* translators: %s: module title */
+                return sprintf(__('Needs the %s module enabled.', 'stackless-lite-edd'), $title);
+            }
+        }
+        return null;
     }
 
     public function blockedReason(string $id): ?string
