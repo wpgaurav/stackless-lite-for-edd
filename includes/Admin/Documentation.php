@@ -11,6 +11,7 @@ defined('ABSPATH') || exit;
 final class Documentation
 {
     public const DOCS = 'https://gauravtiwari.org/docs/stackless-for-edd';
+    public const CHANGELOG = 'https://gauravtiwari.org/changelogs/stackless-for-edd/';
 
     /** Module id (or screen key) => section/page. */
     private const PAGES = [

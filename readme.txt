@@ -4,7 +4,7 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.2.1
+Stable tag: 1.3.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -83,6 +83,10 @@ When a customer pays with Dodo Payments, your site creates a checkout through th
 * [Source code on GitHub](https://github.com/wpgaurav/stackless-lite-for-edd)
 * [Stackless for EDD](https://gauravtiwari.org/product/stackless-for-edd/), the full plugin
 
+== Source code and libraries ==
+
+The admin toasts in `assets/js/toast.js` bundle [Notch Toast](https://github.com/Devsethi3/notch-toast) 0.2.0 and [Motion](https://motion.dev/) 14.7.1, both MIT licensed (see `assets/js/toast.LICENSE.txt`). React comes from WordPress. `assets/js/toast.js` is the readable build and `toast.min.js` its minified copy; the source (`tools/build/toast/entry.js`) and the build script (`tools/build/toast.mjs`) are in the [GitHub repository](https://github.com/wpgaurav/stackless-lite-for-edd).
+
 == Installation ==
 
 1. Install and activate Easy Digital Downloads 3.5 or newer (free or Pro).
@@ -113,6 +117,9 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 1.3.0 =
+* Short confirmations on Stackless admin screens, such as "Settings saved." and switching a module on or off, show as a toast that drops from the admin bar. Errors and longer messages stay on the page.
 
 = 1.2.1 =
 * Checkout: a logged-in buyer's name is filled in from their earlier orders. Their account keeps the name typed at checkout when it had none, so they don't type it again on the next purchase.
