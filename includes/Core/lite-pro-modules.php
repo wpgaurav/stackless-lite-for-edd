@@ -167,6 +167,18 @@ return [
             __('A My pages tab on the account page', 'stackless-lite-edd'),
         ],
     ],
+    'product-feed' => [
+        'title' => __('Google Product Feed', 'stackless-lite-edd'),
+        'description' => __('A Google Merchant Center feed of your downloads for free listings and Shopping ads, rebuilt when downloads change.', 'stackless-lite-edd'),
+        'group' => 'catalog',
+        'icon' => 'rss',
+        'features' => [
+            __('One item per download or price option, with price, image, category and brand', 'stackless-lite-edd'),
+            __('Rebuilt a few minutes after downloads change, and once a day', 'stackless-lite-edd'),
+            __('Leaves out what Google does not allow, and shows each left-out download with the reason', 'stackless-lite-edd'),
+            __('Google category mapping per download category, with ebooks kept out of Shopping ads', 'stackless-lite-edd'),
+        ],
+    ],
     'product-addons' => [
         'title' => __('Fields & Paid Add-ons', 'stackless-lite-edd'),
         'description' => __('Download add-ons with their own prices, and collapsible checkout fields with optional fees.', 'stackless-lite-edd'),

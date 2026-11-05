@@ -88,6 +88,19 @@ class Module extends \StacklessEDD\Core\Module
         add_action('edd_order_receipt_after_table', [$this, 'orderDetails'], 5, 1);
         add_filter('render_block_edd/confirmation', [$this, 'confirmationBlock'], 20, 1);
         add_filter('edd_order_receipt', [$this, 'email'], 20, 2);
+
+        // Contract: apply_filters('stackless_edd_is_service_download', false, int $download_id).
+        // Google Product Feed leaves services out without reading this module's meta.
+        add_filter('stackless_edd_is_service_download', [$this, 'filterIsService'], 10, 2);
+    }
+
+    /**
+     * @param mixed $service
+     * @param mixed $downloadId
+     */
+    public function filterIsService($service, $downloadId): bool
+    {
+        return (bool) $service || self::isService(is_numeric($downloadId) ? (int) $downloadId : 0);
     }
 
     /* ------------------------------------------------------------------

@@ -99,6 +99,19 @@ final class Module extends \StacklessEDD\Core\Module
         // Download editor.
         add_action('edd_meta_box_settings_fields', [$this, 'renderDownloadFields'], 5, 2);
         add_action('edd_save_download', [$this, 'saveDownloadFields'], 10, 2);
+
+        // Contract: apply_filters('stackless_edd_is_external_download', false, int $download_id).
+        // Google Product Feed leaves external downloads out without reading this module's meta.
+        add_filter('stackless_edd_is_external_download', [$this, 'filterIsExternal'], 10, 2);
+    }
+
+    /**
+     * @param mixed $external
+     * @param mixed $downloadId
+     */
+    public function filterIsExternal($external, $downloadId): bool
+    {
+        return (bool) $external || $this->isExternal($downloadId);
     }
 
     private function trackingEnabled(): bool

@@ -4,7 +4,7 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.3.0
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -117,6 +117,9 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 1.4.0 =
+* The Stackless dashboard lists Google Product Feed, new in Stackless for EDD: a Google Merchant Center feed of your downloads for free listings and Shopping ads.
 
 = 1.3.0 =
 * Short confirmations on Stackless admin screens, such as "Settings saved." and switching a module on or off, show as a toast that drops from the admin bar. Errors and longer messages stay on the page.
