@@ -70,8 +70,12 @@ class OrderBuilder
         ], $funding, $vault, $returnUrl !== '' ? $returnUrl : $cancel, $cancel, ['context' => 'order', 'order' => $order]);
     }
 
-    /** Merchant-initiated renewal charge against a vaulted PayPal account. */
-    public function renewal(Order $renewal, string $vaultId): array
+    /**
+     * Merchant-initiated renewal charge against a vaulted PayPal account or card.
+     *
+     * @param string $type paypal|card
+     */
+    public function renewal(Order $renewal, string $vaultId, string $type = 'paypal'): array
     {
         $unit = $this->purchaseUnit($renewal);
         /* translators: %s: site name */
@@ -80,17 +84,85 @@ class OrderBuilder
         $body = [
             'intent' => 'CAPTURE',
             'purchase_units' => [$unit],
-            'payment_source' => [
-                'paypal' => [
-                    'vault_id' => $vaultId,
-                    'stored_credential' => [
-                        'payment_initiator' => 'MERCHANT',
-                        'usage' => 'SUBSEQUENT',
-                    ],
-                ],
-            ],
+            'payment_source' => self::vaultSource($vaultId, $type, 'MERCHANT', 'RECURRING'),
         ];
         return (array) apply_filters('stackless_edd_paypal_gateway_renewal_args', $body, $renewal);
+    }
+
+    /**
+     * Charge outside the renewal schedule against a saved PayPal account or card
+     * (Contracts\SavedMethodCharger, e.g. a post-purchase offer).
+     *
+     * @param string $type      paypal|card
+     * @param bool   $onSession The buyer is on the page and may approve or authenticate.
+     */
+    public function savedCharge(Order $order, string $vaultId, string $type, bool $onSession, string $returnUrl): array
+    {
+        $unit = $this->purchaseUnit($order);
+        $source = self::vaultSource($vaultId, $type, $onSession ? 'CUSTOMER' : 'MERCHANT', 'UNSCHEDULED');
+        if ($onSession) {
+            $context = ['return_url' => $returnUrl, 'cancel_url' => Orders::payUrl($order)];
+            if ($type === 'card') {
+                $source['card']['attributes'] = ['verification' => ['method' => $this->gateway->threeDSecureMethod()]];
+                $source['card']['experience_context'] = $context;
+            } else {
+                $source['paypal']['experience_context'] = array_merge(['brand_name' => $this->gateway->brandName(), 'shipping_preference' => 'NO_SHIPPING', 'user_action' => 'PAY_NOW'], $context);
+            }
+        }
+        $body = [
+            'intent' => 'CAPTURE',
+            'purchase_units' => [$unit],
+            'payment_source' => $source,
+        ];
+        return (array) apply_filters('stackless_edd_paypal_gateway_saved_charge_args', $body, $order, $onSession);
+    }
+
+    /**
+     * payment_source for a vault id. Cards carry the card-network stored-credential fields;
+     * PayPal wallets take payment_initiator and usage only.
+     */
+    public static function vaultSource(string $vaultId, string $type, string $initiator, string $paymentType): array
+    {
+        if ($type === 'card') {
+            return ['card' => [
+                'vault_id' => $vaultId,
+                'stored_credential' => [
+                    'payment_initiator' => $initiator,
+                    'payment_type' => $paymentType,
+                    'usage' => 'SUBSEQUENT',
+                ],
+            ]];
+        }
+        return ['paypal' => [
+            'vault_id' => $vaultId,
+            'stored_credential' => [
+                'payment_initiator' => $initiator,
+                'usage' => 'SUBSEQUENT',
+            ],
+        ]];
+    }
+
+    /**
+     * Order paid with a Fastlane single-use card token: PayPal charges it on create, so the
+     * order is captured in one call (or asks for 3-D Secure).
+     */
+    public function fromSingleUseToken(Order $order, string $token, bool $vault, string $returnUrl): array
+    {
+        $unit = $this->purchaseUnit($order);
+        $card = [
+            'single_use_token' => $token,
+            'attributes' => ['verification' => ['method' => $this->gateway->threeDSecureMethod()]],
+            'experience_context' => ['return_url' => $returnUrl, 'cancel_url' => Orders::payUrl($order)],
+        ];
+        if ($vault) {
+            $card['attributes']['vault'] = ['store_in_vault' => 'ON_SUCCESS'];
+        }
+        $body = [
+            'intent' => 'CAPTURE',
+            'purchase_units' => [$unit],
+            'payment_source' => ['card' => $card],
+        ];
+        return (array) apply_filters('stackless_edd_paypal_gateway_order_args', $body, ['context' => 'fastlane', 'order' => $order]);
     }
 
     /** Vault v3 setup token: save a PayPal account without charging it. */
@@ -229,6 +301,19 @@ class OrderBuilder
             $experience['locale'] = $locale;
         }
 
+        if ($funding === 'card') {
+            // Card fields: PayPal runs 3-D Secure in the card fields when it applies.
+            $card = [
+                'attributes' => ['verification' => ['method' => $this->gateway->threeDSecureMethod()]],
+                'experience_context' => ['return_url' => $returnUrl, 'cancel_url' => $cancelUrl],
+            ];
+            if ($vault) {
+                $card['attributes']['vault'] = ['store_in_vault' => 'ON_SUCCESS'];
+            }
+            $body['payment_source'] = ['card' => $card];
+            return (array) apply_filters('stackless_edd_paypal_gateway_order_args', $body, $context);
+        }
+
         if ($vault || in_array($funding, ['', 'paypal', 'paylater'], true)) {
             $source = ['experience_context' => $experience];
             if ($vault) {
@@ -248,7 +333,8 @@ class OrderBuilder
                 'shipping_preference' => 'NO_SHIPPING',
             ]]];
         }
-        // Other funding sources (guest card, local methods) are handled by the JS SDK itself.
+        // Other funding sources (guest_card: the buttons' own card form, Apple Pay, Google Pay,
+        // local methods) carry no payment source: the JS SDK collects them itself.
 
         return (array) apply_filters('stackless_edd_paypal_gateway_order_args', $body, $context);
     }

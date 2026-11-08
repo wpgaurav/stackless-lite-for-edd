@@ -22,6 +22,8 @@ interface SubscriptionData
     public const STATUS_PENDING_CANCEL = 'pending_cancel';
     public const STATUS_CANCELLED = 'cancelled';
     public const STATUS_EXPIRED = 'expired';
+    /** Paused by the customer or the store: no renewals, no access, resumes on a date or by hand. 2.0.0. */
+    public const STATUS_PAUSED = 'paused';
 
     /** Order meta a gateway writes on the PARENT order before completing it; copied to each subscription. */
     public const META_TOKEN_ID = '_stackless_edd_payment_token_id';
@@ -31,6 +33,28 @@ interface SubscriptionData
     /** Order meta on renewal and switch orders. */
     public const META_RENEWAL_OF = '_stackless_edd_renewal_of';
     public const META_SWITCH_OF = '_stackless_edd_switch_subscription_id';
+
+    /**
+     * Decline details a gateway writes on a RENEWAL (or switch, or saved-method) order when a charge
+     * fails, BEFORE it sets the order to failed: Dunning reacts to the status change and reads them
+     * then (2.0.0). META_DECLINE holds one of the DECLINE_* categories; META_DECLINE_CODE the
+     * provider's own code (e.g. Stripe's insufficient_funds), for notes and reports only.
+     */
+    public const META_DECLINE = '_stackless_edd_decline_category';
+    public const META_DECLINE_CODE = '_stackless_edd_decline_code';
+
+    /** The issuer will never approve this method (lost/stolen/closed/invalid): stop retrying it. */
+    public const DECLINE_HARD = 'hard';
+    /** A decline that may pass later (generic do_not_honor, try_again_later, processing errors). */
+    public const DECLINE_SOFT = 'soft';
+    /** Not enough funds or over a limit: retry later in the cycle. */
+    public const DECLINE_FUNDS = 'funds';
+    /** The customer must authenticate (3-D Secure, payer action): send a pay link. */
+    public const DECLINE_AUTH = 'auth';
+    /** The provider could not be reached or failed on its side. */
+    public const DECLINE_NETWORK = 'network';
+
+    public const DECLINES = [self::DECLINE_HARD, self::DECLINE_SOFT, self::DECLINE_FUNDS, self::DECLINE_AUTH, self::DECLINE_NETWORK];
 
     public function get_id(): int;
 

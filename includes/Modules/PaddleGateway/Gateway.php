@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\PaddleGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Contracts\PausableGateway;
 use StacklessEDD\Contracts\SubscriptionData;
 use StacklessEDD\Contracts\SubscriptionGateway;
 use StacklessEDD\Core\Gateway as BaseGateway;
@@ -18,7 +19,7 @@ defined('ABSPATH') || exit;
  * sales tax and VAT, and runs subscription billing itself. Orders, renewals, refunds and
  * cancellations stay in step through the browser return and signed webhooks.
  */
-class Gateway extends BaseGateway implements SubscriptionGateway
+class Gateway extends BaseGateway implements SubscriptionGateway, PausableGateway
 {
     public const ID = 'stackless_edd_paddle';
 
@@ -375,6 +376,71 @@ class Gateway extends BaseGateway implements SubscriptionGateway
         Subscriptions::note($subscription, $deferred
             ? __('Paddle subscription set to end at the close of the paid period.', 'stackless-lite-edd')
             : __('Paddle subscription canceled immediately.', 'stackless-lite-edd'));
+        return true;
+    }
+
+    /**
+     * Pause at Paddle now; Paddle resumes it on $resume_at by itself (2.0.0). On resume the paid
+     * period continues if it hasn't ended, otherwise a new one starts.
+     */
+    public function stackless_edd_pause_subscription(SubscriptionData $subscription, ?int $resume_at): bool
+    {
+        $paddleId = (string) $subscription->get_meta(SubscriptionData::META_GATEWAY_SUBSCRIPTION);
+        if ($paddleId === '') {
+            return false;
+        }
+        $api = $this->api($this->subscriptionMode($subscription));
+        $remote = $api->request('GET', 'subscriptions/' . rawurlencode($paddleId));
+        if (is_wp_error($remote)) {
+            $this->log('Pause lookup for ' . $paddleId . ' failed: ' . $remote->get_error_message(), 'error');
+            return false;
+        }
+        if (($remote['status'] ?? '') === 'paused') {
+            return true;
+        }
+        if (($remote['status'] ?? '') !== 'active') {
+            return false;
+        }
+        $body = ['effective_from' => 'immediately', 'on_resume' => 'continue_existing_billing_period'];
+        if ($resume_at !== null && $resume_at > time()) {
+            $body['resume_at'] = gmdate('Y-m-d\TH:i:s\Z', $resume_at);
+        }
+        $result = $api->request('POST', 'subscriptions/' . rawurlencode($paddleId) . '/pause', $body);
+        if (is_wp_error($result)) {
+            $this->log('Pause of ' . $paddleId . ' failed: ' . $result->get_error_message(), 'error');
+            return false;
+        }
+        Subscriptions::note($subscription, __('Paddle subscription paused.', 'stackless-lite-edd'));
+        return true;
+    }
+
+    public function stackless_edd_resume_subscription(SubscriptionData $subscription): bool
+    {
+        $paddleId = (string) $subscription->get_meta(SubscriptionData::META_GATEWAY_SUBSCRIPTION);
+        if ($paddleId === '') {
+            return false;
+        }
+        $api = $this->api($this->subscriptionMode($subscription));
+        $remote = $api->request('GET', 'subscriptions/' . rawurlencode($paddleId));
+        if (is_wp_error($remote)) {
+            $this->log('Resume lookup for ' . $paddleId . ' failed: ' . $remote->get_error_message(), 'error');
+            return false;
+        }
+        if (in_array($remote['status'] ?? '', ['active', 'trialing'], true)) {
+            return true; // Paddle already resumed it (its own resume date).
+        }
+        if (($remote['status'] ?? '') !== 'paused') {
+            return false;
+        }
+        $result = $api->request('POST', 'subscriptions/' . rawurlencode($paddleId) . '/resume', [
+            'effective_from' => 'immediately',
+            'on_resume' => 'continue_existing_billing_period',
+        ]);
+        if (is_wp_error($result)) {
+            $this->log('Resume of ' . $paddleId . ' failed: ' . $result->get_error_message(), 'error');
+            return false;
+        }
+        Subscriptions::note($subscription, __('Paddle subscription resumed.', 'stackless-lite-edd'));
         return true;
     }
 }

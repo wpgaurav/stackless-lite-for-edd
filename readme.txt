@@ -4,11 +4,11 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 1.4.0
+Stable tag: 2.0.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-21 free modules for Easy Digital Downloads: Stripe, PayPal, Polar, Paddle and Dodo Payments, wishlists, saved carts, pay what you like and more.
+28 free modules for Easy Digital Downloads: Stripe, PayPal, Razorpay, Mollie, Square, Creem, Paystack, Flutterwave, Mercado Pago, Polar, Paddle and Dodo Payments, wishlists, saved carts, pay what you like and more.
 
 == Description ==
 
@@ -34,18 +34,25 @@ Modules in Lite:
 
 Payments:
 
-* **Stripe**: cards, Apple Pay, Google Pay, Link and local payment methods, with refunds from the order screen.
-* **PayPal**: PayPal Smart Buttons and Pay Later at checkout, with refunds.
+* **Stripe**: cards, Apple Pay, Google Pay, Link and local payment methods, with refunds from the order screen, plus Stripe Managed Payments with Stripe as merchant of record for digital downloads.
+* **PayPal**: PayPal Smart Buttons and Pay Later at checkout, card fields, Fastlane, Apple Pay and Google Pay, with refunds.
+* **Razorpay**: UPI, cards, netbanking and wallets with Razorpay Checkout, with refunds both ways and a signed webhook.
+* **Mollie**: cards, iDEAL, Bancontact, PayPal, Apple Pay and every other method in your Mollie account on Mollie's hosted checkout, with refunds both ways.
+* **Square**: cards, Apple Pay and Google Pay with Square's own payment form, cards saved on file with Square, and refunds both ways.
+* **Creem**: Creem as a merchant of record for software and digital products, with hosted checkout and sales tax and VAT handled for you, in US dollars or euros.
+* **Paystack**: cards, bank transfer, USSD, mobile money and Apple Pay on Paystack's hosted checkout, for stores in Nigeria, Ghana, South Africa, Kenya and Côte d'Ivoire.
+* **Flutterwave**: cards, bank transfer, mobile money and USSD on Flutterwave's hosted checkout, with refunds both ways.
+* **Mercado Pago**: Checkout Pro for stores in Argentina, Brazil, Chile, Colombia, Mexico, Peru and Uruguay, with cards, Pix, boleto, OXXO and local methods in the account's currency.
 * **Polar**: Polar as a merchant of record, with hosted checkout and sales tax and VAT handled for you.
 * **Paddle**: Paddle Billing as a merchant of record, with an overlay checkout and sales tax and VAT handled for you.
 * **Dodo Payments**: Dodo Payments as a merchant of record, with hosted checkout and sales tax, VAT and GST handled for you.
-* **Payment Gateway Tools**: take payments with more than one Polar, Paddle or Dodo Payments account.
+* **Payment Gateway Tools**: take payments with more than one Polar, Paddle, Dodo Payments or Creem account.
 
 Customers also get an account page with their orders, downloads, profile and the tabs your modules add.
 
 = Stackless for EDD =
 
-[Stackless for EDD](https://gauravtiwari.org/product/stackless-for-edd/) adds subscriptions with automatic renewals and saved payment methods, software licensing, page access, multi-currency, invoices, quotes, order bumps, on-page and modal checkout, coupon affiliates, webhooks, FluentCRM and AI agents. The Lite dashboard lists those modules so you can see what each one does. Lite never limits or times out its own features.
+[Stackless for EDD](https://gauravtiwari.org/product/stackless-for-edd/) adds subscriptions with automatic renewals and saved payment methods, an EDD Recurring importer and Billing Health, software licensing with beta channels, page access, multi-currency, invoices, quotes, order bumps, post-purchase offers, checkout recovery, VAT numbers, gift cards and store credit, on-page and modal checkout, coupon affiliates, webhooks, FluentCRM and AI agents. The Lite dashboard lists those modules so you can see what each one does. Lite never limits or times out its own features.
 
 = Privacy =
 
@@ -58,11 +65,39 @@ The payment modules connect to the payment provider you switch on, and only that
 
 = Stripe =
 
-When a customer pays with Stripe, the checkout loads Stripe.js from js.stripe.com so card details go straight to Stripe and never reach your server. Your site sends the order amount, currency, order ID, and the customer's name and email to the Stripe API (api.stripe.com) to create the payment, and Stripe sends payment events back to your site's webhook. Stripe's [Services Agreement](https://stripe.com/legal/ssa) and [Privacy Policy](https://stripe.com/privacy) apply.
+When a customer pays with Stripe, the checkout loads Stripe.js from js.stripe.com so card details go straight to Stripe and never reach your server. Your site sends the order amount, currency, order ID, and the customer's name and email to the Stripe API (api.stripe.com) to create the payment, and Stripe sends payment events back to your site's webhook. With Stripe Managed Payments, the buyer pays on a page of your store that embeds Stripe Checkout (js.stripe.com); Stripe is the seller of record and receives the order's line items, amounts and the customer's email. Stripe's [Services Agreement](https://stripe.com/legal/ssa) and [Privacy Policy](https://stripe.com/privacy) apply.
 
 = PayPal =
 
-When a customer pays with PayPal, the checkout loads the PayPal JavaScript SDK from www.paypal.com and your site creates and captures the order through the PayPal API (api-m.paypal.com, or the sandbox in test mode), sending the order amount, currency, a description of the purchase and the order ID. PayPal sends payment events back to your site's webhook. PayPal's [User Agreement](https://www.paypal.com/us/legalhub/useragreement-full) and [Privacy Statement](https://www.paypal.com/us/legalhub/privacy-full) apply.
+When a customer pays with PayPal, the checkout loads the PayPal JavaScript SDK from www.paypal.com and your site creates and captures the order through the PayPal API (api-m.paypal.com, or the sandbox in test mode), sending the order amount, currency, a description of the purchase and the order ID. PayPal card fields and Fastlane load from www.paypal.com, so card details go to PayPal and never reach your server; card payments also send the billing address for verification, and Fastlane looks up the buyer's email with PayPal. Apple Pay through PayPal loads Apple Pay JS from applepay.cdn-apple.com and Google Pay loads from pay.google.com; both receive the total and currency for the payment sheet. PayPal sends payment events back to your site's webhook. PayPal's [User Agreement](https://www.paypal.com/us/legalhub/useragreement-full) and [Privacy Statement](https://www.paypal.com/us/legalhub/privacy-full) apply.
+
+= Razorpay =
+
+When a customer pays with Razorpay, the payment page loads Razorpay Checkout from checkout.razorpay.com, where the customer enters payment details with Razorpay, never on your site. Your site creates the payment through the Razorpay API (api.razorpay.com), sending the amount, currency, order ID and your site's host name, and for saved payment methods the customer's name, email and phone. Razorpay sends payment, refund and mandate events back to your site's webhook. Razorpay's [Terms of Use](https://razorpay.com/terms/) and [Privacy Policy](https://razorpay.com/privacy/) apply.
+
+= Mollie =
+
+When a customer pays with Mollie, your site creates the payment through the Mollie API (api.mollie.com), sending the amount, currency, a description with the order number, the order ID and your site's host name, the return and webhook addresses, the customer's name, email and address, and for saved payment methods a Mollie customer with the name and email. The customer pays on Mollie's hosted checkout (www.mollie.com). Mollie calls your site's webhook with a payment ID, and your site reads the payment back from the Mollie API. Mollie's [User Agreement](https://www.mollie.com/user-agreement) and [Privacy Policy](https://www.mollie.com/privacy) apply.
+
+= Square =
+
+When a customer pays with Square, the checkout loads Square's Web Payments SDK from web.squarecdn.com (sandbox.web.squarecdn.com in sandbox mode), so card details go straight to Square and never reach your server. Your site creates the payment through the Square API (connect.squareup.com, or connect.squareupsandbox.com in sandbox mode), sending the amount, currency, order ID, a note with the order number, the customer's email and billing address, and for saved cards a Square customer with the name and email. Google Pay and Apple Pay open their own payment sheets. Square sends payment, refund and card events back to your site's webhook. Square's [Terms of Service](https://squareup.com/legal/general/ua) and [Privacy Notice](https://squareup.com/legal/general/privacy) apply.
+
+= Creem =
+
+When a customer pays with Creem, your site creates a product and a checkout through the Creem API (api.creem.io, or test-api.creem.io in test mode), sending the download name, price, currency, order ID, subscription schedule and the customer's email, and sends the customer to Creem's hosted checkout. Creem sends payment, subscription, refund and dispute events back to your site's webhook. Creem's [Terms of Service](https://www.creem.io/terms) and [Privacy Policy](https://www.creem.io/privacy) apply.
+
+= Paystack =
+
+When a customer pays with Paystack, your site starts a transaction through the Paystack API (api.paystack.co), sending the amount, currency, order ID and number, and the customer's email and name, and sends the customer to Paystack's hosted checkout. Paystack sends payment, refund and dispute events back to your site's webhook. Paystack's [Terms of Service](https://paystack.com/terms) and [Merchant Privacy Policy](https://paystack.com/privacy/merchant) apply.
+
+= Flutterwave =
+
+When a customer pays with Flutterwave, your site creates a payment link through the Flutterwave API (api.flutterwave.com), sending the amount, currency, order ID and number, the store name, and the customer's email and name, and sends the customer to Flutterwave's hosted checkout. Flutterwave sends payment and refund events back to your site's webhook. Flutterwave's [Terms and Conditions](https://flutterwave.com/us/terms) and [Privacy Notice](https://flutterwave.com/us/privacy-notice) apply.
+
+= Mercado Pago =
+
+When a customer pays with Mercado Pago, your site creates a Checkout Pro preference through the Mercado Pago API (api.mercadopago.com), sending the order total, currency, order ID and number, the site host, and the customer's email and name, and sends the customer to Mercado Pago's checkout. Your site also reads the account's country and test status from the API when you save the access token. Mercado Pago sends payment notifications back to your site's webhook. Mercado Pago's terms and privacy policy for your account's country apply, for example in [Argentina](https://www.mercadopago.com.ar/ayuda/terminos-y-politicas_194) ([privacy](https://www.mercadopago.com.ar/privacidad)), [Brazil](https://www.mercadopago.com.br/ajuda/termos-e-politicas_194) ([privacy](https://www.mercadopago.com.br/privacidade)) and [Mexico](https://www.mercadopago.com.mx/ayuda/terminos-y-politicas_194) ([privacy](https://www.mercadopago.com.mx/privacidad)).
 
 = Polar =
 
@@ -117,6 +152,16 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 2.0.0 =
+* New: Creem, Razorpay, Mollie, Square, Paystack, Flutterwave and Mercado Pago gateways. Razorpay, Mollie and Square save payment methods that customers manage on the account page.
+* New: Stripe Managed Payments, a second Stripe gateway with Stripe as merchant of record for digital downloads, paid in Stripe Checkout embedded in a page of your store.
+* New: PayPal card fields with 3-D Secure, Fastlane for guest buyers in the US, and Apple Pay and Google Pay through PayPal. PayPal's own card form comes back when card fields aren't offered.
+* New: Payment Gateway Tools can run several Creem copies, one per Creem store.
+* Improved: saving the Stripe settings adds any missing events to an existing Stripe webhook.
+* Improved: test-mode failures on providers whose test and live modes share one API host no longer send the failed live payment email.
+* Improved: every Stackless box on the download edit screen links to its documentation.
+* Fixed: payments through a copy of Polar, Paddle, Dodo Payments or Creem keep their transaction ID on the order.
 
 = 1.4.0 =
 * The Stackless dashboard lists Google Product Feed, new in Stackless for EDD: a Google Merchant Center feed of your downloads for free listings and Shopping ads.

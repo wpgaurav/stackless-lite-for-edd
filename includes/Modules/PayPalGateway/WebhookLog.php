@@ -110,6 +110,31 @@ final class WebhookLog
         ], ['event_id' => $eventId]);
     }
 
+    /**
+     * Failed events, and events claimed but never finished, from the last 7 days (newest
+     * first), for the health screen.
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    public static function problems(int $limit = 20): array
+    {
+        global $wpdb;
+        $table = self::table();
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        if ($wpdb->get_var($wpdb->prepare('SHOW TABLES LIKE %s', $table)) !== $table) {
+            return [];
+        }
+        // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+        $rows = $wpdb->get_results($wpdb->prepare(
+            "SELECT event_id, event_type, status, message, attempts, updated_at FROM %i WHERE updated_at > %s AND (status = 'failed' OR (status = 'processing' AND updated_at < %s)) ORDER BY updated_at DESC LIMIT %d",
+            $table,
+            gmdate('Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS),
+            gmdate('Y-m-d H:i:s', time() - self::STALE_AFTER),
+            max(1, $limit)
+        ), ARRAY_A);
+        return is_array($rows) ? $rows : [];
+    }
+
     /** Keep 90 days of history; runs on roughly one claim in fifty. */
     private static function maybePrune(): void
     {

@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\PayPalGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Contracts\SavedMethodCharger;
 use StacklessEDD\Contracts\SubscriptionData;
 use StacklessEDD\Contracts\SubscriptionGateway;
 use StacklessEDD\Core\Gateway as BaseGateway;
@@ -12,11 +13,13 @@ defined('ABSPATH') || exit;
 
 /**
  * PayPal (Orders v2 + Vault v3) for Easy Digital Downloads, with automatic subscription renewals.
+ * Since 2.0.0 also card fields with 3-D Secure, Fastlane, Apple Pay and Google Pay, and
+ * Contracts\SavedMethodCharger for post-purchase offers.
  *
  * Settings (credentials, buttons, Pay Later) are this module's Stackless settings; the store
  * owner turns the gateway on in Downloads → Settings → Payments.
  */
-class Gateway extends BaseGateway implements SubscriptionGateway
+class Gateway extends BaseGateway implements SubscriptionGateway, SavedMethodCharger
 {
     public const ID = 'stackless_edd_paypal';
     public const OPTION_PREFIX = 'stackless_edd_paypal_gateway_';
@@ -31,10 +34,20 @@ class Gateway extends BaseGateway implements SubscriptionGateway
     public const META_RENEWAL_ATTEMPTS = '_stackless_edd_paypal_renewal_attempts';
     public const META_PAYER_EMAIL = '_stackless_edd_paypal_payer_email';
     public const META_VOIDED = '_stackless_edd_paypal_voided';
+    /** paypal|card: what the vault id on an order or subscription pays with (2.0.0). */
+    public const META_VAULT_TYPE = '_stackless_edd_paypal_vault_type';
+    /** card (card fields), guest_card (the buttons' card form), fastlane, applepay, googlepay, paypal, paylater or venmo: how a checkout was paid (2.0.0). */
+    public const META_FUNDING = '_stackless_edd_paypal_funding';
 
     /** Hidden checkout fields the buttons fill in after PayPal approves. */
     public const FIELD_ORDER = 'stackless_edd_paypal_order_id';
     public const FIELD_SETUP = 'stackless_edd_paypal_setup_token';
+    /** Fastlane single-use card token (2.0.0). */
+    public const FIELD_FASTLANE = 'stackless_edd_paypal_fastlane_token';
+    /** Funding source the buyer approved with (2.0.0). */
+    public const FIELD_FUNDING = 'stackless_edd_paypal_funding';
+    /** Funding sources recorded on the order from FIELD_FUNDING. */
+    public const FUNDING = ['card', 'guest_card', 'applepay', 'googlepay', 'paypal', 'paylater', 'venmo'];
 
     /** Features this gateway offers to the Subscriptions module. */
     public const STACKLESS_FEATURES = ['auto_renewal', 'multiple_subscriptions', 'zero_total_setup', 'payment_method_change', 'amount_change', 'date_change'];
@@ -173,6 +186,50 @@ class Gateway extends BaseGateway implements SubscriptionGateway
         return $this->setting('paylater_messaging', 'yes') === 'yes';
     }
 
+    public function cardFieldsEnabled(): bool
+    {
+        return $this->setting('card_fields', self::cardFieldsDefault()) === 'yes';
+    }
+
+    /**
+     * Card fields are on for stores that set PayPal up on 2.0 or later, and stay off for stores
+     * whose PayPal settings were saved before (settings stored, but no card_fields option), so
+     * their checkout does not change on update. Either way they show only where PayPal says the
+     * account is eligible. Saving the settings once stores the choice explicitly.
+     */
+    public static function cardFieldsDefault(): string
+    {
+        $savedBefore = get_option(self::OPTION_PREFIX . 'sandbox', null) !== null;
+        return $savedBefore && get_option(self::OPTION_PREFIX . 'card_fields', null) === null ? 'no' : 'yes';
+    }
+
+    /** Fastlane for this request: switched on, card fields on, a guest buyer, a US store charging USD. */
+    public function fastlaneAvailable(string $currency = ''): bool
+    {
+        if ($this->setting('fastlane', 'no') !== 'yes' || !$this->cardFieldsEnabled() || is_user_logged_in()) {
+            return false;
+        }
+        $currency = strtoupper($currency !== '' ? $currency : stackless_edd_current_currency());
+        $country = function_exists('edd_get_shop_country') ? strtoupper((string) edd_get_shop_country()) : '';
+        return (bool) apply_filters('stackless_edd_paypal_gateway_fastlane_available', $currency === 'USD' && $country === 'US');
+    }
+
+    public function applePayEnabled(): bool
+    {
+        return $this->setting('apple_pay', 'no') === 'yes';
+    }
+
+    public function googlePayEnabled(): bool
+    {
+        return $this->setting('google_pay', 'no') === 'yes';
+    }
+
+    /** SCA_WHEN_REQUIRED (default) or SCA_ALWAYS for card payments (2.0.0). */
+    public function threeDSecureMethod(): string
+    {
+        return $this->setting('three_d_secure', 'SCA_WHEN_REQUIRED') === 'SCA_ALWAYS' ? 'SCA_ALWAYS' : 'SCA_WHEN_REQUIRED';
+    }
+
     /** Debug lines only when the store owner turned logging on; warnings and errors always. */
     public function log(string $message, string $level = 'info', array $context = []): void
     {
@@ -227,6 +284,8 @@ class Gateway extends BaseGateway implements SubscriptionGateway
         $requiresVault = stackless_edd_cart_requires_saved_payment_method();
         $total = (float) edd_get_cart_total();
         $currency = strtoupper(stackless_edd_current_currency());
+        // Apple Pay and Google Pay take one-time payments only.
+        $wallets = !$requiresVault && !stackless_edd_cart_contains_subscription() && $total > 0;
 
         stackless_edd_get_template('paypal_gateway/payment-fields.php', [
             'gateway' => $this,
@@ -237,6 +296,7 @@ class Gateway extends BaseGateway implements SubscriptionGateway
             'intent' => $requiresVault ? 'capture' : $this->intent(),
             'currency' => $currency,
             'total' => Amount::format($total, $currency),
+            'wallets' => $wallets,
         ]);
     }
 
@@ -247,6 +307,8 @@ class Gateway extends BaseGateway implements SubscriptionGateway
         $post = (array) ($purchase_data['post_data'] ?? []);
         $paypalOrderId = isset($post[self::FIELD_ORDER]) && is_scalar($post[self::FIELD_ORDER]) ? sanitize_text_field(wp_unslash((string) $post[self::FIELD_ORDER])) : '';
         $setupToken = isset($post[self::FIELD_SETUP]) && is_scalar($post[self::FIELD_SETUP]) ? sanitize_text_field(wp_unslash((string) $post[self::FIELD_SETUP])) : '';
+        $fastlaneToken = isset($post[self::FIELD_FASTLANE]) && is_scalar($post[self::FIELD_FASTLANE]) ? sanitize_text_field(wp_unslash((string) $post[self::FIELD_FASTLANE])) : '';
+        $funding = isset($post[self::FIELD_FUNDING]) && is_scalar($post[self::FIELD_FUNDING]) ? sanitize_key(wp_unslash((string) $post[self::FIELD_FUNDING])) : '';
 
         $currency = stackless_edd_current_currency();
         if (!Amount::supported($currency)) {
@@ -266,7 +328,14 @@ class Gateway extends BaseGateway implements SubscriptionGateway
         }
 
         try {
-            $result = $this->payments()->process($order, $paypalOrderId, $setupToken);
+            if ($fastlaneToken !== '' && preg_match('/^[A-Za-z0-9_-]{6,200}$/', $fastlaneToken)) {
+                $result = $this->payments()->payWithSingleUseToken($order, $fastlaneToken);
+            } else {
+                if (in_array($funding, self::FUNDING, true)) {
+                    Orders::setMeta($orderId, self::META_FUNDING, $funding);
+                }
+                $result = $this->payments()->process($order, $paypalOrderId, $setupToken);
+            }
         } catch (\Throwable $e) {
             $this->log('Checkout failed for order ' . $orderId . ': ' . $e->getMessage(), 'error');
             $result = ['result' => 'failure', 'message' => __('PayPal could not take this payment. Please try again or choose another payment method.', 'stackless-lite-edd')];
@@ -312,9 +381,27 @@ class Gateway extends BaseGateway implements SubscriptionGateway
             $message = __('PayPal renewal hit an unexpected error before it could be confirmed.', 'stackless-lite-edd');
             $fresh = Orders::get((int) $renewal_order->id);
             if ($fresh && !Orders::isPaid($fresh)) {
+                // Dunning reads the decline when the order turns failed, so it is written first.
+                Declines::write((int) $fresh->id, SubscriptionData::DECLINE_NETWORK, 'unexpected_error');
                 Orders::setStatus((int) $fresh->id, 'failed', $message);
             }
             return ['result' => 'failed', 'message' => $message];
+        }
+    }
+
+    /**
+     * Contracts\SavedMethodCharger (2.0.0): charge a vaulted PayPal account or card for an
+     * order outside the renewal schedule (post-purchase offers).
+     *
+     * @return array{result:string, message?:string, redirect?:string}
+     */
+    public function stackless_edd_charge_saved_method(Order $order, string $token_id, bool $on_session): array
+    {
+        try {
+            return (new SavedCharges($this))->charge($order, $token_id, $on_session);
+        } catch (\Throwable $e) {
+            $this->log('Saved-method charge for order ' . $order->id . ' failed: ' . $e->getMessage(), 'error');
+            return ['result' => 'failed', 'message' => __('PayPal could not take this payment.', 'stackless-lite-edd')];
         }
     }
 

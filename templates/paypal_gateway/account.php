@@ -20,10 +20,10 @@
 defined('ABSPATH') || exit;
 ?>
 <div class="stackless-paypal-account">
-	<h2><?php esc_html_e('Saved PayPal accounts', 'stackless-lite-edd'); ?></h2>
+	<h2><?php esc_html_e('Saved with PayPal', 'stackless-lite-edd'); ?></h2>
 
 	<?php if (!$tokens) : ?>
-		<p><?php esc_html_e('No PayPal account is saved yet. Accounts you use for subscriptions are saved here so renewals are paid automatically.', 'stackless-lite-edd'); ?></p>
+		<p><?php esc_html_e('No PayPal account or card is saved yet. Accounts and cards you use for subscriptions are saved here so renewals are paid automatically.', 'stackless-lite-edd'); ?></p>
 	<?php else : ?>
 		<ul class="stackless-paypal-account__list">
 			<?php foreach ($tokens as $stackless_edd_token) : ?>
@@ -36,7 +36,7 @@ defined('ABSPATH') || exit;
 						<input type="hidden" name="<?php echo esc_attr($field); ?>" value="<?php echo esc_attr($remove_action); ?>" />
 						<input type="hidden" name="token_id" value="<?php echo esc_attr((string) $stackless_edd_token['id']); ?>" />
 						<?php wp_nonce_field($remove_action); ?>
-						<button type="submit" class="button edd-submit" onclick="return window.confirm('<?php echo esc_js(__('Remove this PayPal account? Subscriptions that use it will need another payment method.', 'stackless-lite-edd')); ?>');"><?php esc_html_e('Remove', 'stackless-lite-edd'); ?></button>
+						<button type="submit" class="button edd-submit" onclick="return window.confirm('<?php echo esc_js(__('Remove this saved payment method? Subscriptions that use it will need another payment method.', 'stackless-lite-edd')); ?>');"><?php esc_html_e('Remove', 'stackless-lite-edd'); ?></button>
 					</form>
 				</li>
 			<?php endforeach; ?>

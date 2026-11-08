@@ -517,6 +517,7 @@ final class Module extends \StacklessEDD\Core\Module
             }
             echo '</div>';
         }
+        echo \StacklessEDD\Admin\Documentation::helpField('external_product'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in Documentation.
     }
 
     /**

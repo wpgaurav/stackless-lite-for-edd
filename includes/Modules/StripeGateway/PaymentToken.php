@@ -123,6 +123,15 @@ final class PaymentToken
         return (int) $this->exp_year < $year || ((int) $this->exp_year === $year && (int) $this->exp_month < $month);
     }
 
+    /** Card expiry as Y-m (2030-04), or '' for methods without one. */
+    public function expires(): string
+    {
+        if (!$this->isCard() || !preg_match('/^\d{4}$/', $this->exp_year) || (int) $this->exp_month < 1 || (int) $this->exp_month > 12) {
+            return '';
+        }
+        return $this->exp_year . '-' . str_pad((string) (int) $this->exp_month, 2, '0', STR_PAD_LEFT);
+    }
+
     public static function brandLabel(string $brand): string
     {
         $labels = [

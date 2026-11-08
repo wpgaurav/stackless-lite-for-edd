@@ -562,6 +562,7 @@ final class Module extends \StacklessEDD\Core\Module
         }
         echo '</select></div>';
         echo '<p class="description edd-form-group__help">' . esc_html__('Guests see the login text instead of the price and cannot buy until they log in.', 'stackless-lite-edd') . '</p>';
+        echo \StacklessEDD\Admin\Documentation::helpField('hide_price_until_login'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in Documentation.
         echo '</div>';
     }
 

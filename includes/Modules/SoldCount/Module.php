@@ -159,6 +159,7 @@ final class Module extends \StacklessEDD\Core\Module
                 <label for="<?php echo esc_attr(self::FIELD_HIDE); ?>"><?php esc_html_e('Hide sold count', 'stackless-lite-edd'); ?></label>
             </div>
             <p class="description edd-form-group__help"><?php esc_html_e('Do not show the "sold" badge for this download.', 'stackless-lite-edd'); ?></p>
+            <?php echo \StacklessEDD\Admin\Documentation::helpField('sold_count'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in Documentation. ?>
         </div>
         <?php
     }

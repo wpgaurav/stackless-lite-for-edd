@@ -13,10 +13,11 @@ final class Ajax
     public const NONCE = 'stackless-edd-paypal-gateway';
     public const CREATE_ORDER = 'stackless_edd_paypal_create_order';
     public const CREATE_SETUP_TOKEN = 'stackless_edd_paypal_create_setup_token';
+    public const FASTLANE_TOKEN = 'stackless_edd_paypal_fastlane_token';
 
     public static function register(): void
     {
-        foreach ([self::CREATE_ORDER => 'createOrder', self::CREATE_SETUP_TOKEN => 'createSetupToken'] as $action => $method) {
+        foreach ([self::CREATE_ORDER => 'createOrder', self::CREATE_SETUP_TOKEN => 'createSetupToken', self::FASTLANE_TOKEN => 'fastlaneToken'] as $action => $method) {
             add_action('wp_ajax_' . $action, [self::class, $method]);
             add_action('wp_ajax_nopriv_' . $action, [self::class, $method]);
         }
@@ -27,6 +28,7 @@ final class Ajax
         return [
             'createOrder' => add_query_arg('action', self::CREATE_ORDER, admin_url('admin-ajax.php')),
             'createSetupToken' => add_query_arg('action', self::CREATE_SETUP_TOKEN, admin_url('admin-ajax.php')),
+            'fastlaneToken' => add_query_arg('action', self::FASTLANE_TOKEN, admin_url('admin-ajax.php')),
         ];
     }
 
@@ -63,6 +65,25 @@ final class Ajax
             unset($result['approve']);
         }
         self::respond($result);
+    }
+
+    /** SDK client token for Fastlane, bound to this store's domain. Guests only. */
+    public static function fastlaneToken(): void
+    {
+        self::verify();
+        $gateway = Gateway::instance();
+        if (!$gateway->fastlaneAvailable()) {
+            wp_send_json_error(['message' => __('Fastlane is not available.', 'stackless-lite-edd')], 400);
+        }
+        $host = strtolower((string) wp_parse_url(home_url(), PHP_URL_HOST));
+        $token = $gateway->api()->sdkClientToken([$host]);
+        if (is_wp_error($token)) {
+            $gateway->log('Fastlane client token failed: ' . $token->get_error_message(), 'warning');
+            wp_send_json_error(['message' => $token->get_error_message()], 400);
+        }
+        // The token is short-lived and bound to the domain; it is not a secret, but never cache it.
+        nocache_headers();
+        wp_send_json_success(['id' => 'fastlane', 'token' => $token]);
     }
 
     private static function verify(): void

@@ -61,6 +61,7 @@ final class SettingsPage
         add_action('admin_enqueue_scripts', [$this, 'assets']);
         add_action('wp_ajax_stackless_edd_toggle_module', [$this, 'ajaxToggle']);
         Toast::register();
+        Documentation::register();
         add_filter('plugin_action_links_' . plugin_basename(STACKLESS_EDD_PLUGIN_FILE), function ($links) {
             array_unshift($links, '<a href="' . esc_url(self::url()) . '">' . esc_html__('Modules', 'stackless-lite-edd') . '</a>');
             return $links;

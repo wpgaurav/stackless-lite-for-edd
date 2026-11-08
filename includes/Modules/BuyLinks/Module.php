@@ -87,6 +87,39 @@ final class Module extends \StacklessEDD\Core\Module
         add_action('edd_post_add_to_cart', [$this, 'buyNowOnly'], 20, 3);
         add_filter('edd_straight_to_checkout', [$this, 'buyNowRedirect'], 20);
         add_action('wp_enqueue_scripts', [$this, 'assets']);
+        add_filter('stackless_edd_buy_link_url', [$this, 'buildUrl'], 10, 3);
+    }
+
+    /**
+     * stackless_edd_buy_link_url: a signed buy link for other modules (abandoned checkout
+     * reminders). Always signed, so the downloads, quantities, discount and expiry can't be edited.
+     *
+     * @param mixed $url   '' unless another callback answered
+     * @param mixed $items [[download_id, price_id, quantity], …]
+     * @param mixed $args  discount or coupon (codes), clear (bool or '0'/'1'), to (checkout|cart), exp (Unix time)
+     * @return mixed
+     */
+    public function buildUrl($url, $items = [], $args = [])
+    {
+        if (is_string($url) && $url !== '') {
+            return $url;
+        }
+        $items = LinkParser::normalizeItems($items);
+        if (!$items) {
+            return '';
+        }
+        $args = is_array($args) ? $args : [];
+        $clear = $args['clear'] ?? '';
+        if (is_bool($clear)) {
+            $clear = $clear ? '1' : '0';
+        }
+        return Links::url($items, [
+            'coupon' => (string) ($args['discount'] ?? $args['coupon'] ?? ''),
+            'clear' => (string) $clear,
+            'to' => (string) ($args['to'] ?? ''),
+            'exp' => (int) ($args['exp'] ?? 0),
+            'sign' => true,
+        ]);
     }
 
     public function maybeRotate(): void

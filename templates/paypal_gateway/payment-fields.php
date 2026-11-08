@@ -3,6 +3,9 @@
  * PayPal payment fields inside EDD's purchase form.
  *
  * Override by copying to yourtheme/stackless-edd/paypal_gateway/payment-fields.php.
+ * Since 2.0.0 the card fields, Fastlane and wallets need the #stackless-paypal-card,
+ * #stackless-paypal-card-fields and #stackless-paypal-wallets containers and the two extra
+ * hidden inputs; an older override keeps working with the PayPal buttons only.
  *
  * @var \StacklessEDD\Modules\PayPalGateway\Gateway $gateway
  * @var string $description
@@ -12,6 +15,7 @@
  * @var string $intent         capture|authorize
  * @var string $currency
  * @var string $total
+ * @var bool   $wallets        Apple Pay and Google Pay may show (one-time payments only)
  *
  * @package StacklessEDD
  */
@@ -25,7 +29,7 @@ defined('ABSPATH') || exit;
 	<?php endif; ?>
 
 	<?php if ($requires_vault) : ?>
-		<p class="stackless-paypal__vault-note"><?php esc_html_e('Your PayPal account will be saved so future subscription payments are taken automatically. You can remove it any time in your PayPal account.', 'stackless-lite-edd'); ?></p>
+		<p class="stackless-paypal__vault-note"><?php esc_html_e('Your PayPal account or card will be saved at PayPal so future subscription payments are taken automatically. You can remove it any time from your account page.', 'stackless-lite-edd'); ?></p>
 	<?php endif; ?>
 
 	<div
@@ -37,11 +41,19 @@ defined('ABSPATH') || exit;
 		data-intent="<?php echo esc_attr($intent); ?>"
 		data-currency="<?php echo esc_attr($currency); ?>"
 		data-total="<?php echo esc_attr($total); ?>"
+		data-wallets="<?php echo !empty($wallets) ? '1' : '0'; ?>"
 	></div>
 	<div class="stackless-paypal__messages" id="stackless-paypal-messages"></div>
+	<div class="stackless-paypal__wallets" id="stackless-paypal-wallets"></div>
+	<div class="stackless-paypal__card" id="stackless-paypal-card" hidden>
+		<p class="stackless-paypal__or"><?php esc_html_e('Or pay with a card', 'stackless-lite-edd'); ?></p>
+		<div class="stackless-paypal__card-fields" id="stackless-paypal-card-fields"></div>
+	</div>
 	<p class="stackless-paypal__status" role="status" aria-live="polite"></p>
 
 	<input type="hidden" name="<?php echo esc_attr(\StacklessEDD\Modules\PayPalGateway\Gateway::FIELD_ORDER); ?>" value="" />
 	<input type="hidden" name="<?php echo esc_attr(\StacklessEDD\Modules\PayPalGateway\Gateway::FIELD_SETUP); ?>" value="" />
+	<input type="hidden" name="<?php echo esc_attr(\StacklessEDD\Modules\PayPalGateway\Gateway::FIELD_FASTLANE); ?>" value="" />
+	<input type="hidden" name="<?php echo esc_attr(\StacklessEDD\Modules\PayPalGateway\Gateway::FIELD_FUNDING); ?>" value="" />
 	<noscript><p><?php esc_html_e('Complete your purchase and you will be sent to PayPal to pay.', 'stackless-lite-edd'); ?></p></noscript>
 </fieldset>

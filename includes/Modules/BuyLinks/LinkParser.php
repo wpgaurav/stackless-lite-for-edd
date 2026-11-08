@@ -83,6 +83,35 @@ final class LinkParser
         return ['product' => $product, 'variation' => max(0, $variation), 'qty' => min(self::MAX_QTY, max(1, $qty))];
     }
 
+    /**
+     * Items from another module ([download_id, price_id, quantity] lists, or download_id/price_id/
+     * quantity or product/variation/qty keys) in the shape itemsString() and sign() take. Bad rows
+     * are dropped.
+     *
+     * @param mixed $items
+     * @return array<int, array{product: int, variation: int, qty: int}>
+     */
+    public static function normalizeItems($items): array
+    {
+        $out = [];
+        foreach (is_array($items) ? $items : [] as $item) {
+            if (!is_array($item)) {
+                continue;
+            }
+            $product = (int) ($item['download_id'] ?? $item['product'] ?? $item[0] ?? 0);
+            $variation = (int) ($item['price_id'] ?? $item['variation'] ?? $item[1] ?? 0);
+            $qty = (int) ($item['quantity'] ?? $item['qty'] ?? $item[2] ?? 1);
+            if ($product <= 0) {
+                continue;
+            }
+            $out[] = ['product' => $product, 'variation' => max(0, $variation), 'qty' => min(self::MAX_QTY, max(1, $qty))];
+            if (count($out) >= self::MAX_ITEMS) {
+                break;
+            }
+        }
+        return $out;
+    }
+
     /** @param array[] $items product, variation, qty */
     public static function itemsString(array $items): string
     {

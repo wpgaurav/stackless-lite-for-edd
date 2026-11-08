@@ -47,6 +47,14 @@ final class Module extends BaseModule
             add_filter('edd_payment_details_transaction_id-' . $gateway->id(), [$this, 'linkTransaction'], 10, 2);
         }
         add_action('rest_api_init', [Webhook::class, 'register']);
+        // Billing Health (2.0.0): recent webhook failures.
+        add_filter('stackless_edd_health_sources', static function ($sources) {
+            $sources = is_array($sources) ? $sources : [];
+            $sources['paddle_gateway'] = static function (): array {
+                return WebhookLog::healthReport('Paddle');
+            };
+            return $sources;
+        });
         add_action('template_redirect', [$this, 'route'], 0);
         add_action('wp_enqueue_scripts', [$this, 'checkoutScript']);
         add_filter('stackless_edd_subscriptions_customer_actions', [$this, 'customerActions'], 10, 2);

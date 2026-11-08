@@ -7,12 +7,14 @@ namespace StacklessEDD\Modules\PayPalGateway;
 defined('ABSPATH') || exit;
 
 /**
- * Saved PayPal accounts (Vault v3 payment tokens) for merchant-initiated renewals:
+ * Saved PayPal accounts and cards (Vault v3 payment tokens) for merchant-initiated renewals:
  * the counterpart of the WooCommerce payment-token rows the Woo gateway used.
  *
  * One row per EDD customer and vault id. The row id is what goes into
  * SubscriptionData::META_TOKEN_ID on orders and subscriptions. A vault id only
- * works in the PayPal environment (live or sandbox) that created it.
+ * works in the PayPal environment (live or sandbox) that created it. Since 2.0.0 a row
+ * is either a PayPal account (type paypal) or a card vaulted at PayPal (type card, see
+ * CardTokens), which renews with payment_source.card.vault_id.
  */
 final class Tokens
 {
@@ -39,6 +41,10 @@ final class Tokens
             payer_id varchar(64) NOT NULL DEFAULT '',
             paypal_customer_id varchar(64) NOT NULL DEFAULT '',
             environment varchar(10) NOT NULL DEFAULT 'live',
+            type varchar(10) NOT NULL DEFAULT 'paypal',
+            card_brand varchar(32) NOT NULL DEFAULT '',
+            card_last4 varchar(4) NOT NULL DEFAULT '',
+            card_expiry varchar(7) NOT NULL DEFAULT '',
             created_at datetime NOT NULL,
             PRIMARY KEY  (id),
             UNIQUE KEY customer_vault (customer_id,vault_id),
@@ -47,8 +53,12 @@ final class Tokens
         ) {$charset};");
     }
 
-    /** Store (or reuse) a saved account. Returns the token row id. */
-    public static function save(int $customerId, int $userId, string $vaultId, string $email, string $payerId, string $paypalCustomerId, string $environment): int
+    /**
+     * Store (or reuse) a saved account. Returns the token row id.
+     *
+     * @param array{type?:string,card_brand?:string,card_last4?:string,card_expiry?:string} $card card columns (CardTokens::save())
+     */
+    public static function save(int $customerId, int $userId, string $vaultId, string $email, string $payerId, string $paypalCustomerId, string $environment, array $card = []): int
     {
         global $wpdb;
         $table = self::table();
@@ -66,6 +76,10 @@ final class Tokens
             'payer_id' => substr(sanitize_text_field($payerId), 0, 64),
             'paypal_customer_id' => substr(sanitize_text_field($paypalCustomerId), 0, 64),
             'environment' => $environment === 'sandbox' ? 'sandbox' : 'live',
+            'type' => ($card['type'] ?? '') === 'card' ? 'card' : 'paypal',
+            'card_brand' => substr(sanitize_key((string) ($card['card_brand'] ?? '')), 0, 32),
+            'card_last4' => substr((string) preg_replace('/\D/', '', (string) ($card['card_last4'] ?? '')), 0, 4),
+            'card_expiry' => substr((string) preg_replace('/[^0-9-]/', '', (string) ($card['card_expiry'] ?? '')), 0, 7),
             'created_at' => gmdate('Y-m-d H:i:s'),
         ]);
         $id = (int) $wpdb->insert_id;
@@ -152,9 +166,18 @@ final class Tokens
         return $ids;
     }
 
-    /** "PayPal (buyer@example.com)" */
+    /** paypal|card: what a saved row pays with. Rows saved before 2.0 are PayPal accounts. */
+    public static function type(array $token): string
+    {
+        return (string) ($token['type'] ?? '') === 'card' ? 'card' : 'paypal';
+    }
+
+    /** "PayPal (buyer@example.com)", or "Visa ending in 1111 (expires 12/2030)" for a card. */
     public static function displayName(array $token): string
     {
+        if (self::type($token) === 'card') {
+            return CardTokens::displayName($token);
+        }
         $email = (string) ($token['email'] ?? '');
         /* translators: %s: PayPal account email */
         return $email !== '' ? sprintf(__('PayPal (%s)', 'stackless-lite-edd'), $email) : __('PayPal', 'stackless-lite-edd');

@@ -26,7 +26,7 @@ final class Module extends BaseModule
 
     public function description(): string
     {
-        return __('PayPal Smart Buttons and Pay Later at checkout, refunds, and saved PayPal accounts that renew subscriptions automatically. Uses PayPal’s REST APIs directly.', 'stackless-lite-edd');
+        return __('PayPal Smart Buttons and Pay Later at checkout, with optional card fields, Fastlane, Apple Pay and Google Pay. Refunds, and saved PayPal accounts and cards that renew subscriptions automatically. Uses PayPal’s REST APIs directly.', 'stackless-lite-edd');
     }
 
     public function group(): string
@@ -50,6 +50,10 @@ final class Module extends BaseModule
         add_action('edd_transition_order_status', [$this, 'onStatusChange'], 10, 3);
         add_filter('edd_payment_details_transaction_id-' . Gateway::ID, [$gateway, 'linkTransaction'], 10, 2);
         add_action('stackless_edd_settings_saved_paypal_gateway', [$this, 'settingsSaved']);
+        add_filter('stackless_edd_health_sources', [Health::class, 'register']);
+        // EDD Recurring migrator (2.0.0): stop PayPal Subscriptions API subscriptions on this app.
+        add_filter('stackless_edd_cancel_external_subscription', [External::class, 'cancel'], 10, 3);
+        add_action('init', [Wallets::class, 'serveDomainAssociation'], 1);
         Ajax::register();
         Refunds::register();
         Account::register();
@@ -158,6 +162,60 @@ final class Module extends BaseModule
                 'desc' => __('PayPal rejects repeated invoice numbers, so use a unique prefix per store on the same PayPal account.', 'stackless-lite-edd'),
             ],
             ['id' => $p . 'payment_section', 'type' => 'sectionend'],
+
+            [
+                'id' => $p . 'cards_section',
+                'type' => 'title',
+                'title' => __('Cards and wallets', 'stackless-lite-edd'),
+                'desc' => __('Card fields, Fastlane, Apple Pay and Google Pay need Advanced Credit and Debit Card Payments turned on for your PayPal app (Apps & Credentials → your app → Features). Each one shows only where PayPal says your account and the buyer are eligible.', 'stackless-lite-edd'),
+            ],
+            [
+                'id' => $p . 'card_fields',
+                'type' => 'checkbox',
+                'title' => __('Card fields', 'stackless-lite-edd'),
+                'desc' => __('Let buyers pay by card on the checkout page (PayPal Advanced Card Payments)', 'stackless-lite-edd'),
+                'default' => Gateway::cardFieldsDefault(),
+                'desc_tip' => __('Card number, expiry and security code fields hosted by PayPal, with 3-D Secure. Cards are saved at PayPal for subscription renewals.', 'stackless-lite-edd'),
+            ],
+            [
+                'id' => $p . 'three_d_secure',
+                'type' => 'select',
+                'title' => __('3-D Secure', 'stackless-lite-edd'),
+                'default' => 'SCA_WHEN_REQUIRED',
+                'options' => [
+                    'SCA_WHEN_REQUIRED' => __('When the bank or regulation requires it', 'stackless-lite-edd'),
+                    'SCA_ALWAYS' => __('On every card payment', 'stackless-lite-edd'),
+                ],
+            ],
+            [
+                'id' => $p . 'fastlane',
+                'type' => 'checkbox',
+                'title' => __('Fastlane', 'stackless-lite-edd'),
+                'desc' => __('Offer Fastlane by PayPal to guest buyers', 'stackless-lite-edd'),
+                'default' => 'no',
+                'desc_tip' => __('Guests recognized by their email pay with a card saved in their Fastlane profile. US stores charging US dollars only; needs the card fields.', 'stackless-lite-edd'),
+            ],
+            [
+                'id' => $p . 'apple_pay',
+                'type' => 'checkbox',
+                'title' => __('Apple Pay', 'stackless-lite-edd'),
+                'desc' => __('Show Apple Pay through PayPal', 'stackless-lite-edd'),
+                'default' => 'no',
+                'desc_tip' => sprintf(
+                    /* translators: %s: URL of the domain association file */
+                    __('Add this site’s domain under Apple Pay in your PayPal app. Stackless serves the domain association file at %s. One-time payments only: carts that start a subscription hide it.', 'stackless-lite-edd'),
+                    '<code>' . esc_html(home_url(Wallets::PATH)) . '</code>'
+                ),
+            ],
+            [
+                'id' => $p . 'google_pay',
+                'type' => 'checkbox',
+                'title' => __('Google Pay', 'stackless-lite-edd'),
+                'desc' => __('Show Google Pay through PayPal', 'stackless-lite-edd'),
+                'default' => 'no',
+                'desc_tip' => __('One-time payments only: carts that start a subscription hide it.', 'stackless-lite-edd'),
+            ],
+            ['id' => $p . 'cards_section', 'type' => 'sectionend'],
 
             ['id' => $p . 'buttons_section', 'type' => 'title', 'title' => __('Buttons', 'stackless-lite-edd')],
             [
@@ -303,15 +361,43 @@ final class Module extends BaseModule
     /** Settings the browser needs (no secrets: the client id is public by design). */
     public static function scriptData(Gateway $gateway): array
     {
+        $components = ['buttons'];
+        if ($gateway->payLaterMessaging()) {
+            $components[] = 'messages';
+        }
+        if ($gateway->cardFieldsEnabled()) {
+            $components[] = 'card-fields';
+        }
+        if ($gateway->applePayEnabled()) {
+            $components[] = 'applepay';
+        }
+        if ($gateway->googlePayEnabled()) {
+            $components[] = 'googlepay';
+        }
         return [
             'gatewayId' => Gateway::ID,
             'clientId' => $gateway->clientId(),
             'sdkBase' => 'https://www.paypal.com/sdk/js',
             'sdkParams' => (array) apply_filters('stackless_edd_paypal_gateway_sdk_params', [
-                'components' => $gateway->payLaterMessaging() ? 'buttons,messages' : 'buttons',
+                'components' => implode(',', $components),
                 'enable-funding' => $gateway->payLaterMessaging() ? 'paylater' : '',
+                // With card fields on the page, the buttons' own card form would be a second card form.
+                'disable-funding' => $gateway->cardFieldsEnabled() ? 'card' : '',
                 'commit' => 'true',
             ]),
+            'cardFields' => $gateway->cardFieldsEnabled(),
+            // Look of the inputs inside PayPal's card field frames (PayPal's CSS subset).
+            'cardStyle' => (array) apply_filters('stackless_edd_paypal_gateway_card_fields_style', [
+                'input' => ['font-size' => '16px', 'padding' => '10px 12px', 'border' => '1px solid #8c8f94', 'border-radius' => '4px', 'box-shadow' => 'none'],
+                'input:focus' => ['border-color' => '#066fd1', 'box-shadow' => '0 0 0 1px #066fd1'],
+                '.invalid' => ['color' => '#b32d2e', 'border-color' => '#b32d2e'],
+            ]),
+            'fastlane' => $gateway->fastlaneAvailable(),
+            'applePay' => $gateway->applePayEnabled(),
+            'googlePay' => $gateway->googlePayEnabled(),
+            'sandbox' => $gateway->isSandbox(),
+            'storeName' => $gateway->brandName(),
+            'storeCountry' => function_exists('edd_get_shop_country') ? strtoupper((string) edd_get_shop_country()) : '',
             // Extra SDK parameters used only when saving an account without a purchase.
             'sdkSetupParams' => (array) apply_filters('stackless_edd_paypal_gateway_sdk_setup_params', []),
             'intent' => $gateway->intent(),
@@ -320,7 +406,7 @@ final class Module extends BaseModule
             'payLater' => $gateway->payLaterMessaging(),
             'ajax' => Ajax::urls(),
             'nonce' => wp_create_nonce(Ajax::NONCE),
-            'fields' => ['order' => Gateway::FIELD_ORDER, 'setup' => Gateway::FIELD_SETUP],
+            'fields' => ['order' => Gateway::FIELD_ORDER, 'setup' => Gateway::FIELD_SETUP, 'fastlane' => Gateway::FIELD_FASTLANE, 'funding' => Gateway::FIELD_FUNDING],
             'i18n' => [
                 'error' => __('PayPal could not start. Please try again or choose another payment method.', 'stackless-lite-edd'),
                 'approved' => __('PayPal approved. Finishing your purchase…', 'stackless-lite-edd'),
@@ -328,6 +414,17 @@ final class Module extends BaseModule
                 'unavailable' => __('PayPal is not available for this currency.', 'stackless-lite-edd'),
                 'cancelled' => __('You closed PayPal before finishing. Use the button again when you are ready.', 'stackless-lite-edd'),
                 'savingAccount' => __('PayPal approved. Saving your account…', 'stackless-lite-edd'),
+                'orCard' => __('Or pay with a card', 'stackless-lite-edd'),
+                'cardName' => __('Name on card', 'stackless-lite-edd'),
+                'cardNumber' => __('Card number', 'stackless-lite-edd'),
+                'cardExpiry' => __('Expiry date', 'stackless-lite-edd'),
+                'cardCvv' => __('Security code', 'stackless-lite-edd'),
+                'cardIncomplete' => __('Check your card details and try again.', 'stackless-lite-edd'),
+                'cardDeclined' => __('The card was declined. Try another card or payment method.', 'stackless-lite-edd'),
+                'cardVerify' => __('Your bank could not verify this card. Try again or use another card.', 'stackless-lite-edd'),
+                'cardSaved' => __('Your card will be saved securely by PayPal for future renewals.', 'stackless-lite-edd'),
+                'fastlaneEmail' => __('Enter your email address to check for a Fastlane profile.', 'stackless-lite-edd'),
+                'walletError' => __('The wallet payment did not finish. Try again or choose another way to pay.', 'stackless-lite-edd'),
             ],
         ];
     }

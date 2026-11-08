@@ -97,23 +97,55 @@ final class Account
     }
 
     /**
-     * stackless_edd_saved_payment_methods: [token id => label] for this gateway.
+     * stackless_edd_saved_payment_methods, in the functions.php shape: id, gateway, label,
+     * is_default, expires (Y-m or ''), plus type, expired and mode. Only the current PayPal
+     * environment's rows; the newest one that hasn't expired is the default.
      *
      * @param mixed $methods
      * @param mixed $userId
-     * @param mixed $gatewayId
+     * @param mixed $gatewayId '' for every gateway
      * @return mixed
      */
     public static function savedMethods($methods, $userId = 0, $gatewayId = '')
     {
-        if ($gatewayId !== Gateway::ID) {
+        if ((string) $gatewayId !== '' && (string) $gatewayId !== Gateway::ID) {
             return $methods;
         }
         $methods = is_array($methods) ? $methods : [];
-        foreach (Tokens::forUser((int) $userId, Gateway::instance()->environment()) as $token) {
-            $methods[(string) $token['id']] = Tokens::displayName($token);
+        $environment = Gateway::instance()->environment();
+        foreach (self::rows(Tokens::forUser((int) $userId, $environment), $environment, time()) as $row) {
+            $methods[] = $row;
         }
         return $methods;
+    }
+
+    /**
+     * Saved-method rows for tokens (newest first). Pure.
+     *
+     * @param array<int,array<string,mixed>> $tokens
+     * @return array<int,array{id:string,gateway:string,label:string,is_default:bool,expires:string,type:string,expired:bool,mode:string}>
+     */
+    public static function rows(array $tokens, string $environment, int $now): array
+    {
+        $rows = [];
+        $default = false;
+        foreach (array_values($tokens) as $token) {
+            $expires = Tokens::type($token) === 'card' && preg_match('/^(\d{4})-(\d{2})$/', (string) ($token['card_expiry'] ?? ''), $m) ? $m[1] . '-' . $m[2] : '';
+            $expired = $expires !== '' && $expires < gmdate('Y-m', $now);
+            $rows[] = [
+                'id' => (string) ($token['id'] ?? ''),
+                'gateway' => Gateway::ID,
+                'label' => Tokens::displayName($token),
+                // The newest method that still works is the default.
+                'is_default' => !$expired && !$default,
+                'expires' => $expires,
+                'type' => Tokens::type($token),
+                'expired' => $expired,
+                'mode' => $environment === 'sandbox' ? 'test' : 'live',
+            ];
+            $default = $default || !$expired;
+        }
+        return $rows;
     }
 
     /**
@@ -170,9 +202,9 @@ final class Account
         }
         $tokenId = isset($_POST['token_id']) ? absint($_POST['token_id']) : 0;
         if (Tokens::deleteForUser($tokenId, $userId)) {
-            stackless_edd_add_notice(__('PayPal account removed. Subscriptions that used it will ask for another payment method at renewal.', 'stackless-lite-edd'), 'success');
+            stackless_edd_add_notice(__('Saved payment method removed. Subscriptions that used it will ask for another payment method at renewal.', 'stackless-lite-edd'), 'success');
         } else {
-            stackless_edd_add_notice(__('That PayPal account could not be removed.', 'stackless-lite-edd'), 'error');
+            stackless_edd_add_notice(__('That saved payment method could not be removed.', 'stackless-lite-edd'), 'error');
         }
         wp_safe_redirect(self::url());
         exit;

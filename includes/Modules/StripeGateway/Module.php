@@ -2,6 +2,7 @@
 
 namespace StacklessEDD\Modules\StripeGateway;
 
+use StacklessEDD\Contracts\SubscriptionData;
 use StacklessEDD\Core\Gateways;
 
 defined('ABSPATH') || exit;
@@ -11,6 +12,9 @@ defined('ABSPATH') || exit;
  * add-on, no SDK). Payment Element and Express Checkout Element at checkout and on download
  * pages, saved methods, SCA, refunds, webhooks, and automatic renewals through
  * Contracts\SubscriptionGateway. EDD's built-in Stripe gateway keeps working next to it.
+ *
+ * Also registers Stripe Managed Payments (2.0.0), a second gateway with Stripe as merchant of
+ * record for digital downloads, on the same keys and webhook.
  */
 final class Module extends \StacklessEDD\Core\Module
 {
@@ -29,7 +33,7 @@ final class Module extends \StacklessEDD\Core\Module
 
     public function description(): string
     {
-        return __('Take cards, Apple Pay, Google Pay, Link and local payment methods with Stripe, save cards, and renew subscriptions automatically.', 'stackless-lite-edd');
+        return __('Take cards, Apple Pay, Google Pay, Link and local payment methods with Stripe, save cards, and renew subscriptions automatically. Includes Stripe Managed Payments, with Stripe as merchant of record for digital downloads.', 'stackless-lite-edd');
     }
 
     public function group(): string
@@ -53,6 +57,17 @@ final class Module extends \StacklessEDD\Core\Module
     {
         $gateway = new Gateway();
         Gateways::add($gateway);
+        // Stripe Managed Payments (2.0.0): one Stripe account per site, so it has no copies.
+        Gateways::add(Managed\Gateway::instance());
+        add_action('template_redirect', [$this, 'managedRoute'], 0);
+        add_filter('stackless_edd_subscriptions_customer_actions', [$this, 'managedCustomerActions'], 10, 2);
+
+        add_filter('stackless_edd_stripe_gateway_adopt_payment_method', [Adoption::class, 'adoptPaymentMethod'], 10, 2);
+        add_filter('stackless_edd_health_sources', [Health::class, 'register']);
+        // EDD Recurring migrator (2.0.0): take over or stop Stripe Billing subscriptions on this account.
+        add_filter('stackless_edd_adopt_external_subscription', [External::class, 'adopt'], 10, 3);
+        add_filter('stackless_edd_cancel_external_subscription', [External::class, 'cancel'], 10, 3);
+        add_filter('stackless_edd_payment_alerts_gateways', [Health::class, 'alertRoutes']);
 
         add_action('rest_api_init', [Webhooks::class, 'register']);
         add_action(Renewals::RETRY_HOOK, [Renewals::class, 'retry']);
@@ -90,11 +105,63 @@ final class Module extends \StacklessEDD\Core\Module
         return self::$fallbackGateway;
     }
 
+    /** One pay, return and portal address for Managed Payments; each handler authenticates its request. */
+    public function managedRoute(): void
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- each handler checks the order token or a nonce.
+        $action = isset($_GET[Managed\Checkout::ENDPOINT]) ? sanitize_key(wp_unslash($_GET[Managed\Checkout::ENDPOINT])) : '';
+        if ($action === '') {
+            return;
+        }
+        $checkout = new Managed\Checkout(Managed\Gateway::instance());
+        if ($action === 'pay') {
+            $checkout->renderPayPage();
+        } elseif ($action === 'return') {
+            $checkout->handleReturn();
+        } elseif ($action === 'portal') {
+            $checkout->handlePortal();
+        }
+    }
+
+    /**
+     * Stripe keeps the card for Managed Payments subscriptions and the API cannot change it,
+     * so "Update payment method" opens Stripe's customer portal.
+     *
+     * @param mixed $actions
+     * @param mixed $subscription
+     * @return mixed
+     */
+    public function managedCustomerActions($actions, $subscription)
+    {
+        if (!is_array($actions) || !$subscription instanceof SubscriptionData || $subscription->get_gateway() !== Managed\Gateway::ID) {
+            return $actions;
+        }
+        if ((string) $subscription->get_meta(SubscriptionData::META_GATEWAY_SUBSCRIPTION) === '' || (string) $subscription->get_meta(SubscriptionData::META_GATEWAY_CUSTOMER) === '') {
+            return $actions;
+        }
+        $open = [
+            SubscriptionData::STATUS_ACTIVE,
+            SubscriptionData::STATUS_TRIAL,
+            SubscriptionData::STATUS_ON_HOLD,
+            SubscriptionData::STATUS_PENDING_CANCEL,
+            SubscriptionData::STATUS_PAUSED,
+        ];
+        if (!in_array($subscription->get_status(), $open, true)) {
+            return $actions;
+        }
+        $actions['stripe_managed_update_payment'] = [
+            'label' => __('Update payment method', 'stackless-lite-edd'),
+            'url' => Managed\Checkout::portalUrl($subscription),
+            'class' => 'button',
+        ];
+        return $actions;
+    }
+
     public function settingsFields(): array
     {
         $p = Settings::PREFIX;
         $webhook = esc_url(Settings::webhookUrl());
-        return [
+        return array_merge([
             [
                 'type' => 'title',
                 'id' => $p . 'keys_section',
@@ -176,9 +243,10 @@ final class Module extends \StacklessEDD\Core\Module
             ],
             ['type' => 'sectionend', 'id' => $p . 'express_section'],
 
+        ], Managed\Gateway::settingsFields(), [
             ['type' => 'title', 'id' => $p . 'advanced_section', 'title' => __('Advanced', 'stackless-lite-edd')],
             ['type' => 'checkbox', 'id' => $p . 'debug', 'title' => __('Debug log', 'stackless-lite-edd'), 'desc' => __('Log API calls and webhook results to Downloads → Tools → Debug Log (stackless-edd-stripe_gateway). Keys and card data are never logged. Errors are always logged.', 'stackless-lite-edd'), 'default' => 'no'],
             ['type' => 'sectionend', 'id' => $p . 'advanced_section'],
-        ];
+        ]);
     }
 }

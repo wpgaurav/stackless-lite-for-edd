@@ -83,6 +83,7 @@ final class Webhooks
         try {
             $note = self::dispatch($type, $object, $mode);
             EventStore::complete($event_id, 'processed', $note);
+            WebhookFailures::resolve($event_id);
             Settings::log(sprintf('Webhook %s (%s): %s', $type, $event_id, $note), 'info');
         } catch (\RuntimeException $e) {
             EventStore::release($event_id);
@@ -90,10 +91,12 @@ final class Webhooks
                 return new \WP_REST_Response(['received' => false, 'retry' => true], 409);
             }
             Settings::log(sprintf('Webhook %s (%s) failed: %s', $type, $event_id, $e->getMessage()), 'error');
+            WebhookFailures::record($event_id, $type, $e->getMessage());
             return new \WP_REST_Response(['received' => false], 500);
         } catch (\Throwable $e) {
             EventStore::release($event_id);
             Settings::log(sprintf('Webhook %s (%s) failed: %s', $type, $event_id, $e->getMessage()), 'error');
+            WebhookFailures::record($event_id, $type, $e->getMessage());
             return new \WP_REST_Response(['received' => false], 500);
         }
 
@@ -142,6 +145,10 @@ final class Webhooks
                 $count = Tokens::updateFromPaymentMethod($object);
                 return sprintf('updated %d token(s)', $count);
         }
+        if (Managed\Events::handles($type)) {
+            // Managed\Sync::DEFERRED equals self::DEFERRED, so a busy order still answers 409.
+            return 'managed: ' . Managed\Events::dispatch($type, $object, $mode);
+        }
         return 'ignored';
     }
 
@@ -154,6 +161,10 @@ final class Webhooks
         $order = self::orderForIntent($object);
         if (!$order) {
             return 'no matching order';
+        }
+        if ((string) $order->gateway === Managed\Gateway::ID) {
+            // Managed Payments orders settle from Checkout and invoice events.
+            return 'order ' . $order->id . ': managed payments';
         }
         $intent = Settings::client($mode)->get('payment_intents/' . rawurlencode((string) $object['id']), ['expand' => ['payment_method', 'latest_charge']]);
         $outcome = Payments::applyPaymentIntent($order, $intent, 'webhook');

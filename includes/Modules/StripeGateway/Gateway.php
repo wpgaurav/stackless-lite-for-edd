@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\StripeGateway;
 
 use StacklessEDD\Admin\SettingsPage;
+use StacklessEDD\Contracts\SavedMethodCharger;
 use StacklessEDD\Contracts\SubscriptionData;
 use StacklessEDD\Contracts\SubscriptionGateway;
 
@@ -22,7 +23,7 @@ defined('ABSPATH') || exit;
  * EDD's own Stripe gateway (id "stripe") is a separate gateway with its own keys, customers and
  * webhooks; both can be enabled at the same time.
  */
-class Gateway extends \StacklessEDD\Core\Gateway implements SubscriptionGateway
+class Gateway extends \StacklessEDD\Core\Gateway implements SubscriptionGateway, SavedMethodCharger
 {
     /** Contract features this gateway supports (everything except gateway_managed). */
     public const STACKLESS_FEATURES = ['auto_renewal', 'multiple_subscriptions', 'zero_total_setup', 'payment_method_change', 'amount_change', 'date_change'];
@@ -551,6 +552,20 @@ class Gateway extends \StacklessEDD\Core\Gateway implements SubscriptionGateway
     /* ---------------------------------------------------------------------
      * Request helpers
      * ------------------------------------------------------------------- */
+
+    /* ---------------------------------------------------------------------
+     * Contracts\SavedMethodCharger (2.0.0)
+     * ------------------------------------------------------------------- */
+
+    /**
+     * Charges a saved method for an order outside the renewal schedule (post-purchase offers).
+     *
+     * @return array{result:string, message?:string, redirect?:string}
+     */
+    public function stackless_edd_charge_saved_method(\EDD\Orders\Order $order, string $token_id, bool $on_session): array
+    {
+        return SavedCharges::charge($order, $token_id, $on_session);
+    }
 
     /** Fragment the front-end scripts turn into stripe.handleNextAction() + server verification. */
     public static function confirmFragment(string $flow, string $type, int $order_id, string $key, string $client_secret): string

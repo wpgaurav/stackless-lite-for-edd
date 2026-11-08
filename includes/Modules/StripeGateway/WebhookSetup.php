@@ -138,6 +138,7 @@ final class WebhookSetup
             return $result;
         }
         update_option(Settings::PREFIX . $mode . '_webhook_secret', $result['secret']);
+        update_option(Admin::eventsOption($mode), Admin::eventsHash(), false);
         Settings::log(sprintf('Webhook setup (%s): %s %s', $mode, $result['status'], $result['id']));
         return $result;
     }

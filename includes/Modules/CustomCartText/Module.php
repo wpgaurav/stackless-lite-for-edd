@@ -288,6 +288,7 @@ final class Module extends \StacklessEDD\Core\Module
             </div>
             <?php
         }
+        echo \StacklessEDD\Admin\Documentation::helpField('custom_cart_text'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in Documentation.
     }
 
     /**

@@ -7,7 +7,8 @@ defined('ABSPATH') || exit;
 /**
  * Emails the store owner about live payment failures: a live order of a watched gateway that
  * turns Failed, and failed live API calls made by Stackless's Stripe, PayPal, Polar, Paddle and
- * Dodo Payments code (refunds, checkouts, renewals).
+ * Dodo Payments code (refunds, checkouts, renewals), plus every gateway that registers a route
+ * through `stackless_edd_payment_alerts_gateways`.
  *
  * Test and sandbox activity never alerts. No keys, customer details or raw request and response
  * bodies go into the email. Repeats of the same failure (same order, or same API error) are held
@@ -36,6 +37,67 @@ final class PaymentAlerts
     /** Order meta a gateway may record with the mode it charged in; EDD's own order mode is the fallback. */
     private const MODE_META = ['_stackless_edd_stripe_mode', '_stackless_edd_polar_mode', '_stackless_edd_paddle_mode', '_stackless_edd_dodo_mode'];
 
+    /**
+     * The built-in routes plus the ones other gateway modules register through
+     * `stackless_edd_payment_alerts_gateways` (2.0.0): route => ['label', 'ids', 'hosts', 'class',
+     * optional 'module' (the Stackless module holding the gateway's settings), optional
+     * 'mode_meta' (order meta key holding live|test), optional 'live_auth' (prefixes of the API
+     * credential that mark a live call, for providers whose test and live calls share a host:
+     * the Bearer token, or the Basic auth user)]. Malformed entries and attempts to replace a
+     * built-in route are ignored.
+     *
+     * @return array<string, array{label:string, ids:string[], hosts:string[], class:string, module?:string, mode_meta?:string, live_auth?:string[]}>
+     */
+    public static function gateways(): array
+    {
+        $gateways = self::GATEWAYS;
+        $extra = function_exists('apply_filters') ? apply_filters('stackless_edd_payment_alerts_gateways', []) : [];
+        if (!is_array($extra)) {
+            return $gateways;
+        }
+        foreach ($extra as $route => $entry) {
+            if (!is_string($route) || !preg_match('/^[a-z0-9_]+$/', $route) || isset(self::GATEWAYS[$route]) || !is_array($entry)) {
+                continue;
+            }
+            $label = isset($entry['label']) && is_string($entry['label']) ? $entry['label'] : '';
+            $ids = isset($entry['ids']) && is_array($entry['ids']) ? array_values(array_filter(array_map('strval', $entry['ids']))) : [];
+            $hosts = isset($entry['hosts']) && is_array($entry['hosts']) ? array_values(array_filter(array_map('strtolower', array_map('strval', $entry['hosts'])))) : [];
+            $class = isset($entry['class']) && is_string($entry['class']) ? $entry['class'] : '';
+            if ($label === '' || !$ids || !$hosts || strpos($class, 'StacklessEDD\\Modules\\') !== 0) {
+                continue;
+            }
+            $clean = ['label' => $label, 'ids' => $ids, 'hosts' => $hosts, 'class' => $class];
+            if (!empty($entry['module']) && is_string($entry['module']) && preg_match('/^[a-z0-9_]+$/', $entry['module'])) {
+                $clean['module'] = $entry['module'];
+            }
+            if (!empty($entry['mode_meta']) && is_string($entry['mode_meta']) && strpos($entry['mode_meta'], '_stackless_edd_') === 0) {
+                $clean['mode_meta'] = $entry['mode_meta'];
+            }
+            if (!empty($entry['live_auth']) && is_array($entry['live_auth'])) {
+                $prefixes = array_values(array_filter(array_map('strval', $entry['live_auth']), static function (string $prefix): bool {
+                    return strlen($prefix) >= 3;
+                }));
+                if ($prefixes) {
+                    $clean['live_auth'] = $prefixes;
+                }
+            }
+            $gateways[$route] = $clean;
+        }
+        return $gateways;
+    }
+
+    /** @return string[] order meta keys holding the mode an order was paid in */
+    private static function modeMeta(): array
+    {
+        $keys = self::MODE_META;
+        foreach (self::gateways() as $gateway) {
+            if (!empty($gateway['mode_meta']) && !in_array($gateway['mode_meta'], $keys, true)) {
+                $keys[] = $gateway['mode_meta'];
+            }
+        }
+        return $keys;
+    }
+
     /** @var array<string,array> */
     private static $pending = [];
 
@@ -58,17 +120,30 @@ final class PaymentAlerts
     public static function selectedRoutes($saved): array
     {
         if ($saved === null) {
-            return array_keys(self::GATEWAYS);
+            return array_keys(self::gateways());
         }
         $saved = is_array($saved) ? array_map('strval', $saved) : [];
-        return array_values(array_intersect(array_keys(self::GATEWAYS), $saved));
+        return array_values(array_intersect(array_keys(self::gateways()), $saved));
+    }
+
+    /**
+     * Starts alerts once every module has booted, so gateways that register through
+     * `stackless_edd_payment_alerts_gateways` are known whatever order modules boot in.
+     *
+     * @param mixed $saved The saved alert_gateways setting (null until first saved).
+     */
+    public static function boot(string $recipient, $saved): void
+    {
+        add_action('init', static function () use ($recipient, $saved): void {
+            self::init($recipient, self::selectedRoutes($saved));
+        }, 1);
     }
 
     /** @param string[] $routes Watched gateways (see selectedRoutes()); none means no alerts. */
     public static function init(string $recipient = '', array $routes = []): void
     {
         self::$recipient = $recipient;
-        self::$routes = array_values(array_intersect(array_keys(self::GATEWAYS), $routes));
+        self::$routes = array_values(array_intersect(array_keys(self::gateways()), $routes));
         if (!self::$routes) {
             return;
         }
@@ -97,7 +172,7 @@ final class PaymentAlerts
     public static function routeForGateway(string $id, ?array $routes = null): string
     {
         foreach ($routes ?? self::$routes as $route) {
-            foreach (self::GATEWAYS[$route]['ids'] ?? [] as $base) {
+            foreach (self::gateways()[$route]['ids'] ?? [] as $base) {
                 if ($id === $base || preg_match('/^' . preg_quote($base, '/') . '_copy\d+$/', $id)) {
                     return $route;
                 }
@@ -113,7 +188,10 @@ final class PaymentAlerts
     {
         $host = strtolower((string) wp_parse_url($url, PHP_URL_HOST));
         foreach (self::$routes as $route) {
-            $gateway = self::GATEWAYS[$route];
+            $gateway = self::gateways()[$route] ?? null;
+            if (!$gateway) {
+                continue;
+            }
             if (!in_array($host, $gateway['hosts'], true) || !self::calledBy($gateway['class'])) {
                 continue;
             }
@@ -133,18 +211,42 @@ final class PaymentAlerts
         return false;
     }
 
-    /** Stripe shares one API host for test and live; the key's prefix tells them apart. */
+    /**
+     * Whether a call to a watched host is a live one. Every route on api.stripe.com checks the
+     * Stripe key (sk_live_ / rk_live_); routes with `live_auth` check the credential's prefix;
+     * the rest use separate sandbox hosts (only the live host is watched) or send live calls
+     * through their own class (Paystack, Flutterwave, Mercado Pago `LiveTransport`).
+     */
     public static function isLiveCall(string $route, array $args): bool
     {
-        if ($route !== 'stripe') {
-            return true; // The other providers use separate sandbox hosts, which are not watched.
+        $gateway = self::gateways()[$route] ?? [];
+        $stripe = $route === 'stripe' || in_array('api.stripe.com', (array) ($gateway['hosts'] ?? []), true);
+        $prefixes = $stripe ? ['sk_live_', 'rk_live_'] : (array) ($gateway['live_auth'] ?? []);
+        if (!$prefixes) {
+            return true;
         }
+        $credential = self::credential($args);
+        foreach ($prefixes as $prefix) {
+            if ($credential !== '' && strpos($credential, (string) $prefix) === 0) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The API credential of a request: a Bearer token, or the user part of Basic auth. Never stored or logged. */
+    private static function credential(array $args): string
+    {
         $headers = is_array($args['headers'] ?? null) ? array_change_key_case($args['headers']) : [];
-        $auth = (string) ($headers['authorization'] ?? '');
+        $auth = trim((string) ($headers['authorization'] ?? ''));
         if (stripos($auth, 'Bearer ') === 0) {
-            $auth = substr($auth, 7);
+            return trim(substr($auth, 7));
         }
-        return strpos($auth, 'sk_live_') === 0 || strpos($auth, 'rk_live_') === 0;
+        if (stripos($auth, 'Basic ') === 0) {
+            $decoded = base64_decode(trim(substr($auth, 6)), true); // phpcs:ignore WordPress.PHP.DiscouragedPHPFunctions.obfuscation_base64_decode -- reads the Basic auth user to tell live from test.
+            return is_string($decoded) ? (string) strtok($decoded, ':') : '';
+        }
+        return $auth;
     }
 
     /**
@@ -249,7 +351,7 @@ final class PaymentAlerts
                 return $label;
             }
         }
-        return self::GATEWAYS[$route]['label'] . ' connection';
+        return (self::gateways()[$route]['label'] ?? $route) . ' connection';
     }
 
     /* ---- Failed orders ----------------------------------------------------------------- */
@@ -257,7 +359,7 @@ final class PaymentAlerts
     /** Whether an order was taken in live mode. A gateway's own mode meta wins; then EDD's order mode. */
     public static function liveOrder(\EDD\Orders\Order $order): bool
     {
-        foreach (self::MODE_META as $key) {
+        foreach (self::modeMeta() as $key) {
             $mode = (string) edd_get_order_meta((int) $order->id, $key, true);
             if ($mode !== '') {
                 return $mode === 'live';
@@ -370,8 +472,9 @@ final class PaymentAlerts
     /** @return array{subject:string,body:string} */
     public static function compose(array $payload): array
     {
-        $route = isset(self::GATEWAYS[$payload['route'] ?? '']) ? (string) $payload['route'] : 'stripe';
-        $label = self::GATEWAYS[$route]['label'];
+        $gateways = self::gateways();
+        $route = isset($gateways[$payload['route'] ?? '']) ? (string) $payload['route'] : 'stripe';
+        $label = $gateways[$route]['label'];
         $host = (string) wp_parse_url(home_url(), PHP_URL_HOST);
         $subject = (!empty($payload['test']) ? '[TEST] ' : '') . '[Shop] ' . $label . ' failure on ' . $host;
         $lines = [
@@ -389,7 +492,8 @@ final class PaymentAlerts
                 $lines[] = $label . ($route === 'stripe' ? ' request ID: ' : ' debug ID: ') . $error['debug_id'];
             }
         }
-        $lines[] = $label . ' settings: ' . \StacklessEDD\Admin\SettingsPage::url(self::GATEWAYS[$route]['module']);
+        $module = (string) ($gateways[$route]['module'] ?? '');
+        $lines[] = $label . ' settings: ' . ($module !== '' ? \StacklessEDD\Admin\SettingsPage::url($module) : admin_url('edit.php?post_type=download&page=edd-settings&tab=gateways'));
         $lines[] = 'Check the order and ' . $label . ' before retrying or requesting another payment. A failed API response does not prove that no payment was captured.';
         $lines[] = 'Repeated alerts for this order or API error are held back for 30 minutes. Keys, customer details and raw request and response bodies are left out.';
         return ['subject' => $subject, 'body' => implode("\n\n", $lines)];

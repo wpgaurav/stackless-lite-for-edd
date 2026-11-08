@@ -107,6 +107,25 @@ function stackless_edd_create_renewal_order($subscription)
 }
 
 /**
+ * Create a subscription from another system's record, keeping its dates (2.0.0). Used by
+ * migrations such as the EDD Recurring importer. Idempotent per `source`: a second call with the
+ * same source returns the subscription created the first time.
+ *
+ * $data keys: source (required, e.g. "edd_recurring:123"), status (SubscriptionData::STATUS_*),
+ * customer_id (EDD customer), user_id, email, currency, gateway, renewal_mode (auto|manual),
+ * token_id, gateway_customer, gateway_subscription, period, interval, times (0 = until cancelled),
+ * dates (start, trial_end, next_payment, end, last_payment, cancelled as Unix times), paid_cycles,
+ * parent_order_id, items ([download_id, price_id, quantity, amount, name]), renewal_orders
+ * ([id, paid]), note.
+ *
+ * @return int|\WP_Error The subscription id.
+ */
+function stackless_edd_import_subscription(array $data)
+{
+    return apply_filters('stackless_edd_import_subscription', new \WP_Error('stackless_edd_subscriptions_inactive', __('Subscriptions module is not active.', 'stackless-lite-edd')), $data);
+}
+
+/**
  * Page through subscriptions for the REST API and other admin tooling.
  *
  * @param array $args status => string[], customer_id => int, user_id => int, download_id => int,
@@ -175,7 +194,7 @@ function stackless_edd_add_subscription_note(int $subscription_id, string $note)
 /**
  * One license as an array: id, license_key, download_id, price_id, order_id, subscription_id,
  * user_id, customer_id, customer_email, status (stored), effective_status (expiry applied),
- * activation_limit, activations (count), expires_at, created_at, updated_at (UTC, Y-m-d H:i:s).
+ * activation_limit, activations (count), channel (stable|beta, 2.0.0), expires_at, created_at, updated_at (UTC, Y-m-d H:i:s).
  *
  * @return array<string,mixed>|null
  */
@@ -373,7 +392,8 @@ function stackless_edd_complete_order(int $order_id, string $transaction_id = ''
                 'object_id' => $order_id,
                 'object_type' => 'order',
                 'transaction_id' => $transaction_id,
-                'gateway' => $order->gateway,
+                // EDD keeps a transaction's gateway in 20 characters; longer ids (gateway copies) would drop the row.
+                'gateway' => substr((string) $order->gateway, 0, 20),
                 'status' => 'complete',
                 'total' => $order->total,
             ]);
@@ -410,6 +430,31 @@ function stackless_edd_order_pay_url(int $order_id): string
     $order = edd_get_order($order_id);
     $url = $order ? (string) $order->get_recovery_url() : '';
     return (string) apply_filters('stackless_edd_order_pay_url', $url, $order_id);
+}
+
+/**
+ * Whether a pending order may be paid from its pay link (2.0.0). Subscriptions answers false for
+ * renewals of subscriptions a provider bills itself (Polar, Paddle, Dodo Payments, Creem, Stripe
+ * Managed Payments): the provider retries those, so a second payment would charge twice. Pages
+ * and emails that print stackless_edd_order_pay_url() ask this first.
+ */
+function stackless_edd_order_pay_link_allowed(int $order_id): bool
+{
+    return (bool) apply_filters('stackless_edd_order_pay_link_allowed', true, $order_id);
+}
+
+/**
+ * A signed Buy Link that fills the cart with $items and goes to checkout (2.0.0), or '' when the
+ * Buy Links module is off. Items: [download_id, price_id|null, quantity] or keyed rows with
+ * download_id, price_id, quantity. $args: discount (codes, comma-separated), clear (bool),
+ * to (checkout|cart), exp (Unix time the link stops working).
+ *
+ * @param array<int,array<int|string,mixed>> $items
+ * @param array<string,mixed> $args
+ */
+function stackless_edd_buy_link_url(array $items, array $args = []): string
+{
+    return (string) apply_filters('stackless_edd_buy_link_url', '', $items, $args);
 }
 
 /**

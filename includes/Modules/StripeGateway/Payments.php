@@ -349,6 +349,8 @@ final class Payments
                         /* translators: 1: PaymentIntent id, 2: customer-facing reason */
                         $note = sprintf(__('Stripe payment failed (%1$s): %2$s', 'stackless-lite-edd'), $intent_id, $message);
                         if (Orders::hasStatus($order, ['on_hold', 'processing']) || Orders::meta($order_id, self::META_OFF_SESSION) === 'yes') {
+                            // Dunning reads the category when the order turns failed, so it goes first.
+                            Declines::fromIntentError($order_id, $error);
                             Orders::setStatus($order_id, 'failed', $note);
                         } else {
                             // Checkout attempts stay pending so EDD resumes the same order on the next try.

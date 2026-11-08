@@ -587,7 +587,9 @@ final class Module extends \StacklessEDD\Core\Module
         } elseif ($downloadId > 0 && edd_download_quantities_disabled($downloadId)) {
             echo ' ' . esc_html__('The quantity input is disabled for this download, so these limits do nothing.', 'stackless-lite-edd');
         }
-        echo '</p></div>';
+        echo '</p>';
+        echo \StacklessEDD\Admin\Documentation::helpField('quantity_limits'); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped in Documentation.
+        echo '</div>';
     }
 
     /**

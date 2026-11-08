@@ -45,6 +45,14 @@ final class Module extends BaseModule
             Gateways::add($gateway);
         }
         add_action('rest_api_init', [Webhook::class, 'register']);
+        // Billing Health (2.0.0): recent webhook failures.
+        add_filter('stackless_edd_health_sources', static function ($sources) {
+            $sources = is_array($sources) ? $sources : [];
+            $sources['dodo_gateway'] = static function (): array {
+                return WebhookLog::healthReport('Dodo Payments');
+            };
+            return $sources;
+        });
         add_action('template_redirect', [$this, 'route'], 0);
         // Payment Gateway Tools adds, renames and removes copies of this gateway.
         add_filter('stackless_edd_gateway_copy_families', [Copies::class, 'declare']);

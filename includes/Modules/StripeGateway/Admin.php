@@ -2,6 +2,8 @@
 
 namespace StacklessEDD\Modules\StripeGateway;
 
+use StacklessEDD\Core\WebhookAddress;
+
 defined('ABSPATH') || exit;
 
 /**
@@ -26,6 +28,7 @@ final class Admin
         add_filter('edd_settings_sections_gateways', [self::class, 'gatewaySection']);
         add_filter('edd_settings_gateways', [self::class, 'gatewaySettings']);
         add_filter('edd_payment_details_transaction_id-' . Settings::GATEWAY_ID, [self::class, 'linkTransaction'], 10, 2);
+        add_filter('edd_payment_details_transaction_id-' . Managed\Gateway::ID, [self::class, 'linkTransaction'], 10, 2);
     }
 
     /**
@@ -106,6 +109,10 @@ final class Admin
                     /* translators: 1: Test or Live, 2: Stripe account id */
                     $notices[] = ['success', sprintf(__('%1$s keys verified with Stripe (account %2$s).', 'stackless-lite-edd'), $label, (string) ($account['id'] ?? ''))];
                 }
+                $added = $webhook !== '' ? self::ensureEvents($client, $mode, $label) : null;
+                if ($added) {
+                    $notices[] = $added;
+                }
             } catch (StripeApiException $e) {
                 if ($e->getHttpStatus() === 403 || $e->getStripeCode() === 'secret_key_required' || ($e->getStripeType() === 'invalid_request_error' && strpos($secret, 'rk_') === 0)) {
                     // Restricted keys may not read the account object; a balance read proves the key works.
@@ -113,6 +120,10 @@ final class Admin
                         $client->get('balance');
                         /* translators: %s: Test or Live */
                         $notices[] = ['success', sprintf(__('%s restricted key verified with Stripe.', 'stackless-lite-edd'), $label)];
+                        $added = $webhook !== '' ? self::ensureEvents($client, $mode, $label) : null;
+                        if ($added) {
+                            $notices[] = $added;
+                        }
                         continue;
                     } catch (StripeApiException $inner) {
                         $e = $inner;
@@ -124,6 +135,56 @@ final class Admin
             }
         }
         set_transient(self::NOTICE_TRANSIENT . get_current_user_id(), $notices, 120);
+    }
+
+    /**
+     * An existing webhook endpoint for this site gets any events added since it was created
+     * (2.0.0 added the Managed Payments Checkout, invoice and subscription events).
+     *
+     * @return array{0:string,1:string}|null Notice, or null when nothing changed.
+     */
+    public static function ensureEvents(StripeClient $client, string $mode, string $label): ?array
+    {
+        if (get_option(self::eventsOption($mode)) === self::eventsHash()) {
+            return null;
+        }
+        try {
+            $existing = $client->get('webhook_endpoints', ['limit' => 100]);
+            foreach ((array) ($existing['data'] ?? []) as $endpoint) {
+                if (!is_array($endpoint) || !WebhookAddress::same((string) ($endpoint['url'] ?? ''), Settings::webhookUrl())) {
+                    continue;
+                }
+                $enabled = array_map('strval', (array) ($endpoint['enabled_events'] ?? []));
+                $missing = in_array('*', $enabled, true) ? [] : array_values(array_diff(Settings::webhookEvents(), $enabled));
+                if ($missing) {
+                    $client->post('webhook_endpoints/' . rawurlencode((string) ($endpoint['id'] ?? '')), [
+                        'enabled_events' => array_values(array_unique(array_merge($enabled, $missing))),
+                    ]);
+                }
+                update_option(self::eventsOption($mode), self::eventsHash(), false);
+                return $missing ? ['success', sprintf(
+                    /* translators: 1: Test or Live, 2: number of events */
+                    _n('%1$s webhook now also sends %2$d new event.', '%1$s webhook now also sends %2$d new events.', count($missing), 'stackless-lite-edd'),
+                    $label,
+                    count($missing)
+                )] : null;
+            }
+        } catch (StripeApiException $e) {
+            /* translators: 1: Test or Live, 2: Stripe error message */
+            return ['warning', sprintf(__('Could not add the new events to the %1$s webhook: %2$s Add them in Stripe → Developers → Webhooks, or use Check the webhook in Stripe below.', 'stackless-lite-edd'), $label, $e->getMessage())];
+        }
+        return null;
+    }
+
+    public static function eventsOption(string $mode): string
+    {
+        return Settings::PREFIX . 'webhook_events_' . ($mode === 'live' ? 'live' : 'test');
+    }
+
+    /** Fingerprint of the event list, to tell whether an endpoint was brought up to date. */
+    public static function eventsHash(): string
+    {
+        return md5(implode(',', Settings::webhookEvents()));
     }
 
     public static function notices(): void
@@ -157,6 +218,21 @@ final class Admin
             ? esc_html__('Enabled at checkout.', 'stackless-lite-edd') . ' '
             : '<strong>' . esc_html__('Disabled.', 'stackless-lite-edd') . '</strong> ';
         printf('<a href="%s">%s</a>', esc_url($payments_url), esc_html__('Turn on or off in Downloads → Settings → Payments', 'stackless-lite-edd'));
+        echo '</td></tr>';
+
+        $managed = Managed\Gateway::instance()->isEnabled();
+        echo '<tr><th scope="row">' . esc_html__('Managed Payments', 'stackless-lite-edd') . '</th><td>';
+        echo $managed
+            ? esc_html__('Stripe Managed Payments is enabled at checkout.', 'stackless-lite-edd')
+            : esc_html__('Stripe Managed Payments is off. Turn it on in Downloads → Settings → Payments.', 'stackless-lite-edd');
+        if ($managed && function_exists('edd_use_taxes') && edd_use_taxes()) {
+            printf(
+                '<div class="notice notice-warning inline"><p>%s <a href="%s">%s</a></p></div>',
+                esc_html__('EDD taxes are on. Stripe collects sales tax and VAT itself for Managed Payments, so buyers would be taxed twice.', 'stackless-lite-edd'),
+                esc_url(admin_url('edit.php?post_type=download&page=edd-settings&tab=taxes')),
+                esc_html__('Turn off EDD taxes', 'stackless-lite-edd')
+            );
+        }
         echo '</td></tr>';
 
         foreach (['test', 'live'] as $mode) {
@@ -218,6 +294,7 @@ final class Admin
     {
         $sections = is_array($sections) ? $sections : [];
         $sections[Settings::GATEWAY_ID] = __('Stripe (Stackless)', 'stackless-lite-edd');
+        $sections[Managed\Gateway::ID] = __('Stripe Managed Payments (Stackless)', 'stackless-lite-edd');
         return $sections;
     }
 
@@ -236,6 +313,19 @@ final class Admin
                 'desc' => sprintf(
                     '%s <a class="button" href="%s">%s</a>',
                     esc_html__('API keys, webhooks, checkout appearance and express buttons live in the Stackless settings.', 'stackless-lite-edd'),
+                    esc_url(Gateway::settingsUrl()),
+                    esc_html__('Open Stripe settings', 'stackless-lite-edd')
+                ),
+            ],
+        ];
+        $settings[Managed\Gateway::ID] = [
+            'stackless_edd_stripe_managed_settings_link' => [
+                'id' => 'stackless_edd_stripe_managed_settings_link',
+                'name' => __('Stripe Managed Payments (Stackless)', 'stackless-lite-edd'),
+                'type' => 'descriptive_text',
+                'desc' => sprintf(
+                    '%s <a class="button" href="%s">%s</a>',
+                    esc_html__('Stripe as merchant of record for digital downloads. The title, tax code and tax setting live in the Stackless Stripe settings, with the shared API keys and webhook. Turn off EDD taxes while you sell with it.', 'stackless-lite-edd'),
                     esc_url(Gateway::settingsUrl()),
                     esc_html__('Open Stripe settings', 'stackless-lite-edd')
                 ),

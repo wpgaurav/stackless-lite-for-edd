@@ -34,10 +34,16 @@ final class Refunds
         add_action('edd_refund_order', [self::class, 'onRefund'], 10, 3);
     }
 
+    /** Orders paid with Stripe or Stripe Managed Payments (same account, same Refunds API). */
+    public static function handles(\EDD\Orders\Order $order): bool
+    {
+        return in_array((string) $order->gateway, [Settings::GATEWAY_ID, Managed\Gateway::ID], true);
+    }
+
     /** @param mixed $order */
     public static function checkbox($order): void
     {
-        if (!$order instanceof \EDD\Orders\Order || (string) $order->gateway !== Settings::GATEWAY_ID) {
+        if (!$order instanceof \EDD\Orders\Order || !self::handles($order)) {
             return;
         }
         $authorized = Orders::meta((int) $order->id, Payments::META_CAPTURED) === 'no';
@@ -62,7 +68,7 @@ final class Refunds
             return;
         }
         $order = Orders::get(absint($_POST['order_id']));
-        if (!$order || (string) $order->gateway !== Settings::GATEWAY_ID) {
+        if (!$order || !self::handles($order)) {
             return;
         }
         parse_str((string) wp_unslash($_POST['data']), $form_data); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- parsed, then sanitized on the next line.
@@ -99,7 +105,7 @@ final class Refunds
     {
         $order_id = (int) $order_id;
         $order = Orders::get($order_id);
-        if (!$order || (string) $order->gateway !== Settings::GATEWAY_ID || self::$syncing) {
+        if (!$order || !self::handles($order) || self::$syncing) {
             return;
         }
         $refund = Orders::get((int) $refund_id);
@@ -199,8 +205,11 @@ final class Refunds
             $ids[] = (string) ($refund['id'] ?? '');
             Orders::updateMeta($order_id, Payments::META_REFUNDS, array_values(array_filter(array_unique($ids))));
             Orders::note($order_id, sprintf(
-                /* translators: 1: amount, 2: Stripe refund id, 3: refund status */
-                __('Refunded %1$s through Stripe (%2$s, %3$s).', 'stackless-lite-edd'),
+                (string) $order->gateway === Managed\Gateway::ID
+                    /* translators: 1: amount, 2: Stripe refund id, 3: refund status */
+                    ? __('Refunded %1$s through Stripe Managed Payments (%2$s, %3$s). Stripe refunds the tax it collected with it.', 'stackless-lite-edd')
+                    /* translators: 1: amount, 2: Stripe refund id, 3: refund status */
+                    : __('Refunded %1$s through Stripe (%2$s, %3$s).', 'stackless-lite-edd'),
                 wp_strip_all_tags(stackless_edd_price($amount, $currency)),
                 (string) ($refund['id'] ?? ''),
                 $status

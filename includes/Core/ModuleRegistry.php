@@ -183,7 +183,16 @@ final class ModuleRegistry
             return false;
         }
 
-        $conflict = ConflictGuard::firstActive($module->conflicts());
+        /**
+         * Plugins that do this module's job; any active one pauses the module. 2.0.0: the EDD Recurring
+         * migrator lets Subscriptions run beside EDD Recurring while EDD Recurring still renews
+         * subscriptions it was told to leave there.
+         *
+         * @param array<string,string> $plugins basename => name
+         * @param string $module_id
+         */
+        $conflicts = (array) apply_filters('stackless_edd_module_conflicts', $module->conflicts(), $id);
+        $conflict = ConflictGuard::firstActive($conflicts);
         if ($conflict !== null) {
             /* translators: %s: plugin name */
             $this->blocked[$id] = sprintf(__('Paused because %s is active and does the same job.', 'stackless-lite-edd'), $conflict);

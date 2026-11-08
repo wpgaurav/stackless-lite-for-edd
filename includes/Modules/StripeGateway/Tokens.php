@@ -321,9 +321,11 @@ final class Tokens
                 'id' => (string) $token->id,
                 'gateway' => Settings::GATEWAY_ID,
                 'label' => $token->displayName(),
+                'is_default' => $token->is_default,
+                'expires' => $token->expires(),
                 'type' => $token->type,
                 'expired' => $token->isExpired(),
-                'default' => $token->is_default,
+                'default' => $token->is_default, // kept for callers written before the 2.0 shape
                 'mode' => $token->mode,
             ];
         }
