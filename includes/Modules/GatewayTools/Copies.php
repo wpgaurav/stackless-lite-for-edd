@@ -7,7 +7,7 @@ use StacklessEDD\Admin\SettingsPage;
 defined('ABSPATH') || exit;
 
 /**
- * Adds, renames and removes copies of Stackless's hosted gateways (Polar, Paddle,
+ * Adds, renames and removes copies of Stackless's hosted gateways (Polar, Paddle, Creem,
  * Dodo Payments): a second account of the same provider, each copy with its own
  * EDD gateway id ("<family>_copyN"), settings, webhook URL and orders.
  *
@@ -125,7 +125,7 @@ final class Copies
     {
         $declared = self::families()[$family] ?? null;
         if (!$declared) {
-            return new \WP_Error('stackless_edd_copy_family', __('Only Stackless’s hosted gateways (Polar, Paddle and Dodo Payments) can be duplicated, and only while their module is on.', 'stackless-lite-edd'));
+            return new \WP_Error('stackless_edd_copy_family', __('Only Stackless’s hosted gateways (Polar, Paddle, Dodo Payments and Creem) can be duplicated, and only while their module is on.', 'stackless-lite-edd'));
         }
         $copies = self::of($family);
         $number = self::nextNumber(array_column($copies, 'number'));

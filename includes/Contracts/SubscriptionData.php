@@ -104,7 +104,7 @@ interface SubscriptionData
     /** Null = runs until cancelled. */
     public function get_end_date(): ?\DateTimeImmutable;
 
-    /** Gateway-managed billing (Polar, Paddle, Dodo) syncs the provider's date through this. */
+    /** Gateway-managed billing (Polar, Paddle, Dodo, Creem, Stripe Managed Payments) syncs the provider's date through this. */
     public function set_next_payment_date(?\DateTimeImmutable $date): void;
 
     public function has_product(int $download_id): bool;

@@ -96,7 +96,7 @@ function stackless_edd_cart_requires_saved_payment_method(): bool
 
 /**
  * Create a pending renewal order for a subscription (copies items, customer, currency,
- * gateway). Used by gateway-managed billing (Polar, Paddle, Dodo) when the provider reports a charge.
+ * gateway). Used by gateway-managed billing (Polar, Paddle, Dodo, Creem, Stripe Managed Payments) when the provider reports a charge.
  *
  * @param \StacklessEDD\Contracts\SubscriptionData $subscription
  * @return int|\WP_Error renewal order id
