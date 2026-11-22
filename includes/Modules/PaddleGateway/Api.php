@@ -132,6 +132,13 @@ class Api
             : sprintf(__('Paddle returned an unexpected error (HTTP %d).', 'stackless-lite-edd'), $code);
     }
 
+    /** True only for Paddle's own not_found: any other failed lookup says nothing about the payment. */
+    public static function isMissing(\WP_Error $error): bool
+    {
+        $data = $error->get_error_data();
+        return is_array($data) && (int) ($data['status'] ?? 0) === 404 && in_array($data['code'] ?? '', ['not_found', 'entity_not_found'], true);
+    }
+
     /** Catches a key or token pasted into the wrong environment. '' when fine. */
     public static function keyProblem(string $mode, string $key, string $clientToken): string
     {

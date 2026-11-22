@@ -208,6 +208,10 @@ class Refunds
     public function recordAdjustment(array $adjustment, string $mode): string
     {
         $action = (string) ($adjustment['action'] ?? '');
+        if ($action === 'refund' && ($adjustment['status'] ?? '') === 'approved'
+            && \StacklessEDD\Core\ExtraPayments::refunded((string) ($adjustment['transaction_id'] ?? ''), abs((int) ($adjustment['totals']['total'] ?? 0)))) {
+            return 'extra payment refunded';
+        }
         $order = Sync::findOrderByMeta(Gateway::META_TRANSACTION_ID, (string) ($adjustment['transaction_id'] ?? ''));
         if (!$order || $order->gateway !== $this->gateway->id()) {
             return 'not ours';

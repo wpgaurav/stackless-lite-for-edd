@@ -19,6 +19,9 @@ defined('ABSPATH') || exit;
  */
 class Checkout
 {
+    /** Error code: the order's earlier payment is not known unpaid, so no other was started. */
+    public const UNCONFIRMED = 'stackless_edd_paddle_unconfirmed';
+
     /** Query argument of the pay, return and update-payment addresses. */
     public const ENDPOINT = 'stackless-edd-paddle';
 
@@ -145,16 +148,43 @@ class Checkout
     /**
      * Create (or reuse) the Paddle transaction for an order.
      *
-     * @return string|\WP_Error URL of the store's Paddle pay page.
+     * @return string|\WP_Error URL of the store's Paddle pay page, or of the return when the
+     *                          order's transaction turns out to be paid.
      */
     public function start(Order $order)
     {
         $orderId = (int) $order->id;
+        // One attempt at a time, each reading what the last one stored.
+        $started = Lock::run('start-' . $orderId, function () use ($orderId) {
+            $fresh = Orders::get($orderId);
+            return $fresh ? $this->startOnce($fresh) : self::unconfirmed();
+        });
+        return $started === null ? self::unconfirmed() : $started;
+    }
+
+    /** @return string|\WP_Error */
+    private function startOnce(Order $order)
+    {
+        $orderId = (int) $order->id;
+        if (Orders::isPaid($order) || (string) $order->status === 'on_hold') {
+            return self::returnUrl($order); // Paid, or a payment is waiting for the merchant.
+        }
         $mode = $this->gateway->mode();
         $currency = strtoupper((string) $order->currency);
         if (!Money::supported($currency)) {
             /* translators: %s: currency code */
             return new \WP_Error('stackless_edd_paddle_currency', sprintf(__('Paddle cannot charge in %s. Choose another payment method.', 'stackless-lite-edd'), $currency));
+        }
+
+        $found = $this->previous($order);
+        if (is_wp_error($found)) {
+            return $found;
+        }
+        [$previous, $creator] = $found;
+        if (EventMap::isPaid($previous)) {
+            // The return confirms that payment, in the account that took it, instead of taking another.
+            Orders::setGateway($order, $creator->id());
+            return self::returnUrl(Orders::get($orderId) ?: $order);
         }
 
         $plan = $this->plan($order);
@@ -164,7 +194,14 @@ class Checkout
 
         $body = $this->body($order, $plan['items'], $plan['subscription']);
         $fingerprint = $mode . ':' . md5((string) wp_json_encode($body));
-        if (!$this->reusable($order, $fingerprint)) {
+        $reuse = $creator->id() === $this->gateway->id() && $this->reusable($order, $fingerprint, $previous);
+        if (!$reuse) {
+            if ($previous) {
+                $closed = $this->close($order, $previous, $creator);
+                if ($closed !== true) {
+                    return $closed;
+                }
+            }
             $transaction = $this->gateway->api($mode)->request('POST', 'transactions', $body);
             if (is_wp_error($transaction)) {
                 $this->gateway->log('Transaction for order ' . $orderId . ' failed: ' . $transaction->get_error_message(), 'error');
@@ -175,6 +212,8 @@ class Checkout
             }
             Orders::setMeta($orderId, Gateway::META_TRANSACTION_ID, (string) $transaction['id']);
             Orders::setMeta($orderId, Gateway::META_FINGERPRINT, $fingerprint);
+            Orders::setMeta($orderId, Gateway::META_SOURCE, $this->gateway->id() . '|' . Gateway::keyFingerprint($this->gateway->apiKey($mode)));
+            Orders::deleteMeta($orderId, Gateway::META_UNVERIFIED);
             $this->gateway->log('Created Paddle transaction ' . $transaction['id'] . ' for order ' . $orderId . '.');
         }
 
@@ -198,17 +237,104 @@ class Checkout
         return (array) apply_filters('stackless_edd_paddle_gateway_transaction_args', $body, $order, $subscription);
     }
 
-    /** Reuse the order's open transaction when nothing about it changed (double submits, back button). */
-    private function reusable(Order $order, string $fingerprint): bool
+    /**
+     * The transaction the order already started, read in the account and mode that created it.
+     * "Not found" means missing only from that account.
+     *
+     * @return array{0:array,1:Gateway}|\WP_Error An empty transaction when there is none, it is known missing or it is another order's.
+     */
+    private function previous(Order $order)
     {
         $orderId = (int) $order->id;
         $transactionId = Orders::meta($orderId, Gateway::META_TRANSACTION_ID);
-        if ($transactionId === '' || Orders::meta($orderId, Gateway::META_FINGERPRINT) !== $fingerprint) {
-            return false;
+        if ($transactionId === '') {
+            return [[], $this->gateway];
         }
-        $mode = (string) strtok($fingerprint, ':');
-        $transaction = $this->gateway->api($mode)->request('GET', 'transactions/' . rawurlencode($transactionId));
-        return !is_wp_error($transaction) && in_array($transaction['status'] ?? '', ['draft', 'ready'], true);
+        $source = explode('|', Orders::meta($orderId, Gateway::META_SOURCE));
+        $creator = $source[0] === '' || $source[0] === $this->gateway->id() ? $this->gateway : Gateway::forId($source[0]);
+        $mode = $this->gateway->orderMode($orderId);
+        $key = $creator ? $creator->apiKey($mode) : '';
+        if (!$creator || $key === '') {
+            return $this->hold($order, $transactionId, $creator, __('the API key it was created with is no longer saved', 'stackless-lite-edd'));
+        }
+        $transaction = $creator->api($mode)->request('GET', 'transactions/' . rawurlencode($transactionId));
+        if (is_wp_error($transaction)) {
+            if (!Api::isMissing($transaction)) {
+                return $this->hold($order, $transactionId, $creator, $transaction->get_error_message());
+            }
+            if (empty($source[1]) || !hash_equals($source[1], Gateway::keyFingerprint($key))) {
+                return $this->hold($order, $transactionId, $creator, __('the API key in use is not known to be the one it was created with', 'stackless-lite-edd'));
+            }
+            return [[], $this->gateway];
+        }
+        if (empty($transaction['status'])) {
+            return $this->hold($order, $transactionId, $creator, __('Paddle\'s answer could not be read', 'stackless-lite-edd'));
+        }
+        $owner = (string) ($transaction['custom_data']['edd_order_id'] ?? '');
+        if (($owner !== '' && $owner !== (string) $orderId) || EventMap::fullyRefunded($transaction) || \StacklessEDD\Core\ExtraPayments::handled($orderId, $transactionId)) {
+            return [[], $this->gateway]; // Another order's, refunded in full, or an extra payment handled since.
+        }
+        return [$transaction, $creator];
+    }
+
+    /**
+     * Cancel an open transaction before another replaces it, so only one can ever be paid.
+     *
+     * @return true|\WP_Error
+     */
+    private function close(Order $order, array $transaction, Gateway $creator)
+    {
+        $transactionId = Orders::meta((int) $order->id, Gateway::META_TRANSACTION_ID);
+        if (!EventMap::isUnpaid($transaction)) {
+            return $this->hold($order, $transactionId, $creator, __('a payment on it may still go through', 'stackless-lite-edd'));
+        }
+        if (($transaction['status'] ?? '') === 'canceled') {
+            return true;
+        }
+        if (Sync::otherSite((array) ($transaction['custom_data'] ?? []))) {
+            // A copy of the store never cancels the original's transaction, so it can't replace it either.
+            return $this->hold($order, $transactionId, $creator, __('it was created by another site', 'stackless-lite-edd'));
+        }
+        $canceled = $creator->api($creator->orderMode((int) $order->id))->request('PATCH', 'transactions/' . rawurlencode($transactionId), ['status' => 'canceled']);
+        if (is_wp_error($canceled)) {
+            /* translators: %s: Paddle error */
+            return $this->hold($order, $transactionId, $creator, sprintf(__('canceling it failed (%s); the API key needs transaction.write', 'stackless-lite-edd'), $canceled->get_error_message()));
+        }
+        if (($canceled['status'] ?? '') !== 'canceled') {
+            return $this->hold($order, $transactionId, $creator, __('Paddle did not confirm it was canceled', 'stackless-lite-edd'));
+        }
+        return true;
+    }
+
+    /** No new transaction: say why on the order, once, and leave it with the account that may have the money. */
+    private function hold(Order $order, string $transactionId, ?Gateway $creator, string $reason): \WP_Error
+    {
+        $orderId = (int) $order->id;
+        if ($creator) {
+            Orders::setGateway($order, $creator->id());
+        }
+        $this->gateway->log('No new transaction for order ' . $orderId . ': ' . $transactionId . ' is not known unpaid (' . $reason . ').', 'warning');
+        if (Orders::meta($orderId, Gateway::META_UNVERIFIED) !== $transactionId) {
+            Orders::setMeta($orderId, Gateway::META_UNVERIFIED, $transactionId);
+            stackless_edd_add_order_note($orderId, sprintf(
+                /* translators: 1: Paddle transaction id, 2: reason */
+                __('No new Paddle payment was started, because transaction %1$s could not be ruled out: %2$s. If this persists, put the API key it was created with back, or check it in Paddle and, if it is unpaid, cancel it there and move this order to the trash so the customer\'s next checkout starts a new one.', 'stackless-lite-edd'),
+                $transactionId,
+                $reason
+            ));
+        }
+        return self::unconfirmed();
+    }
+
+    /** Reuse the order's open transaction when nothing about it changed (double submits, back button). */
+    private function reusable(Order $order, string $fingerprint, array $previous): bool
+    {
+        return in_array($previous['status'] ?? '', ['draft', 'ready'], true) && Orders::meta((int) $order->id, Gateway::META_FINGERPRINT) === $fingerprint;
+    }
+
+    private static function unconfirmed(): \WP_Error
+    {
+        return new \WP_Error(self::UNCONFIRMED, __('We could not confirm whether your earlier Paddle payment for this order went through, so no new payment was started. Please try again in a few minutes or contact us.', 'stackless-lite-edd'));
     }
 
     public static function siteHost(): string
@@ -291,7 +417,8 @@ class Checkout
             wp_safe_redirect(home_url('/'));
             exit;
         }
-        if (Orders::isPaid($order)) {
+        // On hold means a payment needs the merchant: don't offer another.
+        if (Orders::isPaid($order) || (string) $order->status === 'on_hold') {
             wp_safe_redirect(edd_get_receipt_page_uri((int) $order->id));
             exit;
         }

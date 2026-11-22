@@ -35,6 +35,7 @@ final class Plugin
         Assets::register();
         LiveStore::boot();
         Notices::boot();
+        ExtraPayments::boot();
         Account::boot();
         BuyerName::boot();
         $this->modules->discover();

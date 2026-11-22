@@ -109,11 +109,21 @@ class Api
             : sprintf(__('Creem returned an unexpected error (HTTP %d).', 'stackless-lite-edd'), $code);
     }
 
-    /** True when an error says a product in the checkout no longer exists (archived or deleted in Creem). */
+    /** True only for Creem's own "Checkout not found": any other failed lookup says nothing about the payment. */
+    public static function isMissingCheckout(\WP_Error $error): bool
+    {
+        $data = $error->get_error_data();
+        return is_array($data) && (int) ($data['status'] ?? 0) === 404 && stripos($error->get_error_message(), 'checkout not found') !== false;
+    }
+
+    /**
+     * True when an error says a product in the checkout can't be sold: an unknown one answers
+     * 404, an archived one 409 (PRODUCT_UNAVAILABLE, "Product is no longer available").
+     */
     public static function isProductError(\WP_Error $error): bool
     {
         $data = $error->get_error_data();
         $status = is_array($data) ? (int) ($data['status'] ?? 0) : 0;
-        return in_array($status, [400, 404], true) && stripos($error->get_error_message(), 'product') !== false;
+        return in_array($status, [400, 404, 409], true) && stripos($error->get_error_message(), 'product') !== false;
     }
 }

@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\PaddleGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExtraPayments;
 
 defined('ABSPATH') || exit;
 
@@ -91,6 +92,9 @@ class Sync
         if ((string) ($transaction['custom_data']['edd_order_id'] ?? '') !== (string) $order->id) {
             return new \WP_Error('stackless_edd_paddle_mismatch', __('This Paddle transaction belongs to a different order.', 'stackless-lite-edd'));
         }
+        if (!Orders::isPaid($order) && EventMap::fullyRefunded($transaction)) {
+            return new \WP_Error('stackless_edd_paddle_refunded', __('This Paddle transaction was refunded in full.', 'stackless-lite-edd'));
+        }
         if (!EventMap::isPaid($transaction)) {
             /* translators: %s: Paddle transaction status */
             return new \WP_Error('stackless_edd_paddle_unpaid', sprintf(__('The Paddle transaction is %s, not paid yet. It will be confirmed automatically.', 'stackless-lite-edd'), (string) ($transaction['status'] ?? 'unknown')));
@@ -118,14 +122,125 @@ class Sync
             return 'other site';
         }
         $order = Orders::get(absint($customData['edd_order_id'] ?? 0));
-        if (!$order || $order->gateway !== $this->gateway->id()) {
+        if (!$order) {
             return 'not ours';
         }
-        $stored = Orders::meta((int) $order->id, Gateway::META_TRANSACTION_ID);
-        if ($stored !== '' && $stored !== (string) ($transaction['id'] ?? '')) {
-            return 'transaction mismatch';
+        $id = (string) ($transaction['id'] ?? '');
+        $orderId = (int) $order->id;
+        $stored = Orders::meta($orderId, Gateway::META_TRANSACTION_ID);
+        $gateway = (string) $order->gateway;
+        if ($gateway !== $this->gateway->id()) {
+            // Money taken here for an order that moved on is the merchant's to refund. Left alone: data
+            // not from this plugin, the payment that paid the order, and another copy's own payment.
+            $source = explode('|', Orders::meta($orderId, Gateway::META_SOURCE))[0];
+            if (empty($customData['edd_site']) || (Orders::isPaid($order) && (string) $order->get_transaction_id() === $id)
+                || ($stored === $id && Copies::belongs($gateway) && $source !== $this->gateway->id())) {
+                return 'not ours';
+            }
+            return $this->takeExtra($orderId, $transaction, $mode);
+        }
+        if ($stored !== '' && $stored !== $id) {
+            return $this->takeExtra($orderId, $transaction, $mode); // Replaced, then paid.
         }
         return $this->confirmPayment($order, $transaction, $mode);
+    }
+
+    private function takeExtra(int $orderId, array $transaction, string $mode): string
+    {
+        return (string) Lock::run('order-' . $orderId, function () use ($orderId, $transaction, $mode) {
+            $order = Orders::get($orderId);
+            return $order ? $this->flagExtra($order, $transaction, $mode) : 'gone';
+        }, 'busy');
+    }
+
+    /** Call with the order lock held. */
+    private function flagExtra(Order $order, array $transaction, string $mode): string
+    {
+        $totals = (array) ($transaction['details']['totals'] ?? []);
+        $minor = (int) ($totals['grand_total'] ?? 0);
+        $currency = strtoupper((string) ($transaction['currency_code'] ?? ($totals['currency_code'] ?? $order->currency)));
+        $id = (string) ($transaction['id'] ?? '');
+        $this->gateway->log('Order ' . $order->id . ' was not waiting for Paddle transaction ' . $id . '.', 'warning');
+        return ExtraPayments::flag(
+            'Paddle',
+            $order,
+            $id,
+            $minor,
+            $minor > 0 ? self::price($minor, $currency) : '',
+            $mode === 'sandbox' && $this->gateway->orderMode((int) $order->id) === 'live',
+            (string) ($transaction['subscription_id'] ?? '')
+        );
+    }
+
+    /**
+     * Whether a subscription event may change the order's subscription.
+     *
+     * Paddle copies a transaction's custom data to the subscription it starts, so a replaced or
+     * extra payment's subscription names the same order. The order's own is the one linked to it,
+     * or started by the transaction it waits for. An unnamed one is taken only once the order is
+     * paid, or for a free trial, and never when the order has an extra payment. Until the first
+     * payment is confirmed, nothing a subscription event says can end the order's subscription.
+     */
+    private function ownsEvent(SubscriptionData $subscription, array $remote): bool
+    {
+        $parent = Orders::get($subscription->get_parent_order_id());
+        if (!$parent) {
+            return true;
+        }
+        $orderId = (int) $parent->id;
+        $id = (string) ($remote['id'] ?? '');
+        $linked = self::linkedTo($id, $orderId, $subscription);
+        $waiting = self::awaitingFirstPayment($parent, $subscription);
+        if (ExtraPayments::extraSubscription($orderId, $id)) {
+            return $linked && !$waiting;
+        }
+        $running = [SubscriptionData::STATUS_ACTIVE, SubscriptionData::STATUS_TRIAL, SubscriptionData::STATUS_PENDING_CANCEL];
+        if ($waiting && !in_array(EventMap::status($remote), $running, true)) {
+            return false;
+        }
+        if ($linked) {
+            return true;
+        }
+        $startedBy = (string) ($remote['transaction_id'] ?? ''); // Only on subscription.created.
+        $stored = Orders::meta($orderId, Gateway::META_TRANSACTION_ID);
+        if ($startedBy !== '' && $stored !== '') {
+            return $startedBy === $stored;
+        }
+        return !ExtraPayments::hasExtra($orderId) && (!$waiting || (float) $parent->total <= 0);
+    }
+
+    /** The order id that has to be told about a renewal of a subscription that isn't its own, 0 when it isn't one. */
+    private function extraRenewal(array $transaction, ?SubscriptionData $subscription): int
+    {
+        $custom = (array) ($transaction['custom_data'] ?? []);
+        if ($subscription) {
+            $orderId = $subscription->get_parent_order_id();
+        } else {
+            $orderId = empty($custom['edd_site']) || self::otherSite($custom) ? 0 : absint($custom['edd_order_id'] ?? 0);
+        }
+        $parent = $orderId ? Orders::get($orderId) : null;
+        if (!$parent) {
+            return 0;
+        }
+        $id = (string) ($transaction['subscription_id'] ?? '');
+        $linked = self::linkedTo($id, $orderId, $subscription);
+        $waiting = $subscription && self::awaitingFirstPayment($parent, $subscription);
+        $extra = ExtraPayments::extraSubscription($orderId, $id)
+            ? !$linked || $waiting
+            : !$linked && ($waiting || ExtraPayments::hasExtra($orderId));
+        return $extra ? $orderId : 0;
+    }
+
+    private static function linkedTo(string $id, int $orderId, ?SubscriptionData $subscription): bool
+    {
+        $key = SubscriptionData::META_GATEWAY_SUBSCRIPTION;
+        return $id !== '' && (($subscription && (string) $subscription->get_meta($key) === $id) || Orders::meta($orderId, $key) === $id);
+    }
+
+    /** A refunded order is not waiting: its subscription was started once. */
+    private static function awaitingFirstPayment(Order $parent, SubscriptionData $subscription): bool
+    {
+        return !Orders::isPaid($parent) && $subscription->get_status() === SubscriptionData::STATUS_PENDING;
     }
 
     public function confirmPayment(Order $order, array $transaction, string $mode): string
@@ -139,8 +254,16 @@ class Sync
             $transactionId = (string) ($transaction['id'] ?? '');
             $paddleSubscription = (string) ($transaction['subscription_id'] ?? '');
             $customer = (string) ($transaction['customer_id'] ?? '');
+            if (ExtraPayments::handled($orderId, $transactionId)) {
+                return 'extra payment refunded';
+            }
 
             if (Orders::isPaid($order)) {
+                // Completed some other way, and then Paddle took the money as well.
+                if ((int) ($transaction['details']['totals']['grand_total'] ?? 0) > 0
+                    && (string) $order->get_transaction_id() !== $transactionId && Orders::meta($orderId, Gateway::META_TOTAL) === '') {
+                    return $this->flagExtra($order, $transaction, $mode);
+                }
                 // transaction.completed after transaction.paid: the subscription id arrives now.
                 if ($paddleSubscription !== '' && Orders::meta($orderId, SubscriptionData::META_GATEWAY_SUBSCRIPTION) === '') {
                     $this->linkSubscription($orderId, $paddleSubscription, $customer, $mode);
@@ -230,6 +353,11 @@ class Sync
             if (!$subscription instanceof SubscriptionData) {
                 continue;
             }
+            // A buyer who switched copy is billed, and synced, by the account that took the money.
+            if ($subscription->get_gateway() !== $this->gateway->id() && method_exists($subscription, 'set_gateway') && method_exists($subscription, 'save')) {
+                $subscription->set_gateway($this->gateway->id());
+                $subscription->save();
+            }
             $subscription->update_meta(SubscriptionData::META_GATEWAY_SUBSCRIPTION, $paddleSubscription);
             if ($customer !== '') {
                 $subscription->update_meta(SubscriptionData::META_GATEWAY_CUSTOMER, $customer);
@@ -307,6 +435,10 @@ class Sync
             return 'duplicate';
         }
         $subscription = $this->findSubscription($paddleSubscription, (array) ($transaction['custom_data'] ?? []));
+        $extra = $this->extraRenewal($transaction, $subscription);
+        if ($extra) {
+            return $this->takeExtra($extra, $transaction, $mode);
+        }
         if (!$subscription) {
             $this->gateway->log('Renewal ' . $transactionId . ' arrived for unknown Paddle subscription ' . $paddleSubscription . '.', 'warning');
             return 'unknown subscription';
@@ -393,6 +525,9 @@ class Sync
         }
         if (!in_array($subscription->get_gateway(), ['', $this->gateway->id()], true)) {
             return 'other gateway';
+        }
+        if (!$this->ownsEvent($subscription, $remote)) {
+            return 'not this subscription';
         }
 
         // Webhooks can arrive out of order; ignore one older than what was applied.

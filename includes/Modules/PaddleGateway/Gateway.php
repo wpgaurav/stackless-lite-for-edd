@@ -32,6 +32,9 @@ class Gateway extends BaseGateway implements SubscriptionGateway, PausableGatewa
     public const META_AWAITING = '_stackless_edd_paddle_awaiting_renewal';
     public const META_PERIOD_END = '_stackless_edd_paddle_current_period_end';
     public const META_CANCEL_AT_END = '_stackless_edd_paddle_cancel_at_period_end';
+    /** The gateway and key fingerprint that created the transaction, "id|fingerprint". */
+    public const META_SOURCE = '_stackless_edd_paddle_transaction_source';
+    public const META_UNVERIFIED = '_stackless_edd_paddle_unverified_transaction';
     public const META_SYNCED_AT = '_stackless_edd_paddle_synced_at';
 
     public const STACKLESS_FEATURES = ['gateway_managed', 'auto_renewal', 'zero_total_setup'];
@@ -183,6 +186,12 @@ class Gateway extends BaseGateway implements SubscriptionGateway, PausableGatewa
         return new Api($mode, $this->apiKey($mode));
     }
 
+    /** Which key created something (a hash, never the key). */
+    public static function keyFingerprint(string $key): string
+    {
+        return substr(hash('sha256', 'stackless-edd-paddle|' . $key), 0, 16);
+    }
+
     /** Mode an order was paid in (falls back to the current setting). */
     public function orderMode(int $orderId): string
     {
@@ -287,11 +296,16 @@ class Gateway extends BaseGateway implements SubscriptionGateway, PausableGatewa
         if (is_wp_error($url)) {
             /* translators: %s: error */
             stackless_edd_add_order_note($orderId, sprintf(__('Paddle checkout could not start: %s', 'stackless-lite-edd'), $url->get_error_message()));
-            $this->fail($url->get_error_message(), $orderId);
+            // An order whose payment may have gone through stays pending for it.
+            $this->fail($url->get_error_message(), $url->get_error_code() === Checkout::UNCONFIRMED ? 0 : $orderId);
             return;
         }
 
         if (self::inline()) {
+            if ($url !== Checkout::payUrl($order)) {
+                // Already paid: no overlay, the return confirms it.
+                wp_send_json_success(['redirect' => $url]);
+            }
             $order = Orders::get($orderId) ?: $order;
             $config = (array) apply_filters('stackless_edd_paddle_gateway_checkout_settings', $checkout->overlayConfig($order), $order);
             wp_send_json_success(['payUrl' => $url] + $config);

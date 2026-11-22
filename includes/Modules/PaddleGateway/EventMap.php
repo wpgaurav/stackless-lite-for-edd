@@ -88,6 +88,32 @@ final class EventMap
         return in_array($transaction['status'] ?? '', ['paid', 'completed'], true);
     }
 
+    /** Whether everything a paid transaction took has been given back. */
+    public static function fullyRefunded(array $transaction): bool
+    {
+        $left = $transaction['details']['adjusted_totals']['grand_total'] ?? null;
+        $taken = (int) ($transaction['details']['totals']['grand_total'] ?? 0);
+        return self::isPaid($transaction) && $taken > 0 && is_numeric($left) && (int) $left === 0;
+    }
+
+    /** Known unpaid, so another transaction may replace it: canceled, or open with no payment in flight. */
+    public static function isUnpaid(array $transaction): bool
+    {
+        $status = (string) ($transaction['status'] ?? '');
+        if ($status === 'canceled') {
+            return true;
+        }
+        if (!in_array($status, ['draft', 'ready'], true)) {
+            return false; // billed, past_due or unknown: it may still be charged.
+        }
+        foreach ((array) ($transaction['payments'] ?? []) as $payment) {
+            if (in_array($payment['status'] ?? '', ['authorized', 'authorized_flagged', 'captured', 'pending_no_action_required', 'unknown'], true)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** first|renewal|other for a paid Paddle transaction. */
     public static function transactionKind(array $transaction): string
     {

@@ -44,6 +44,14 @@ class Gateway extends BaseGateway implements SubscriptionGateway
     public const META_AWAITING = '_stackless_edd_creem_awaiting_renewal';
     public const META_NEXT_BILLING = '_stackless_edd_creem_next_billing_date';
     public const META_CANCEL_AT_END = '_stackless_edd_creem_cancel_at_period_end';
+    /** The gateway and key fingerprint that created the current checkout, "id|fingerprint". */
+    public const META_SOURCE = '_stackless_edd_creem_checkout_source';
+    /** JSON list of replaced checkouts a buyer could still pay. */
+    public const META_REPLACED = '_stackless_edd_creem_replaced_checkouts';
+    /** Sent as checkout metadata, which Creem copies to the subscription: tells checkouts of one order apart. */
+    public const META_ATTEMPT = '_stackless_edd_creem_attempt';
+    public const META_UNVERIFIED = '_stackless_edd_creem_unverified_checkout';
+    public const META_SYNCED_AT = '_stackless_edd_creem_synced_at';
 
     public const STACKLESS_FEATURES = ['gateway_managed', 'auto_renewal', 'zero_total_setup'];
 
@@ -359,7 +367,7 @@ class Gateway extends BaseGateway implements SubscriptionGateway
     }
 
     /** Which key a mode's saved state belongs to (a hash, never the key). */
-    private static function keyFingerprint(string $key): string
+    public static function keyFingerprint(string $key): string
     {
         return substr(hash('sha256', 'stackless-edd-creem|' . $key), 0, 16);
     }
@@ -398,14 +406,24 @@ class Gateway extends BaseGateway implements SubscriptionGateway
         $api = $this->api($mode);
         $webhookId = '';
         $secret = '';
-        $list = $api->request('GET', 'v1/webhooks', ['page_number' => 1, 'page_size' => 100]);
-        foreach (is_array($list) ? (array) ($list['items'] ?? []) : [] as $webhook) {
-            if (is_array($webhook) && WebhookAddress::same((string) ($webhook['url'] ?? ''), $url)) {
-                $webhookId = (string) ($webhook['id'] ?? '');
-                $secret = (string) ($webhook['secret'] ?? '');
-                break;
+        $page = 1;
+        do {
+            $list = $api->request('GET', 'v1/webhooks', ['page_number' => $page, 'page_size' => 100]);
+            if (is_wp_error($list)) {
+                // It may already exist on a page we could not read: creating one now could double it.
+                /* translators: 1: test or live, 2: Creem error message */
+                return sprintf(__('Reading the %1$s Creem webhooks failed, so none was created: %2$s Save again to retry.', 'stackless-lite-edd'), $label, $list->get_error_message());
             }
-        }
+            foreach ((array) ($list['items'] ?? []) as $webhook) {
+                if (is_array($webhook) && WebhookAddress::same((string) ($webhook['url'] ?? ''), $url)) {
+                    $webhookId = (string) ($webhook['id'] ?? '');
+                    $secret = (string) ($webhook['secret'] ?? '');
+                    break 2;
+                }
+            }
+            $next = (int) ($list['pagination']['next_page'] ?? 0);
+            $page = $next > $page ? $next : 0;
+        } while ($page > 0);
         if ($webhookId === '') {
             $created = $api->request('POST', 'v1/webhooks', [
                 'url' => $url,

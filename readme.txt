@@ -4,7 +4,7 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 2.0.1
+Stable tag: 2.0.3
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -152,6 +152,19 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 2.0.3 =
+* Fixed: one-time checkout with Creem no longer sends a billing field that Creem rejects, and a product archived in Creem no longer blocks checkout.
+* Fixed: paying again for an order no longer starts a second Creem payment when the first went through or can't be checked.
+* Fixed: a Creem payment from a replaced checkout is noted on the order to refund, and holds the order while it is unpaid.
+* Fixed: a subscription started by a duplicate Creem checkout no longer takes the place of the customer's subscription. Subscriptions already linked wrongly this way need a manual check.
+* Fixed: an expired event from Creem no longer ends a subscription Creem still bills, and an older event can't undo a newer one.
+* Fixed: the return from Creem and the check for an existing webhook are more reliable.
+* Fixed: paying again for an order no longer starts a second Paddle payment when the first went through or can't be checked. An open payment is canceled in Paddle before a new one replaces it.
+* Fixed: a Paddle payment an order wasn't waiting for is noted on the order and listed in an admin notice to refund, and holds the order while it is unpaid.
+* Fixed: when an earlier payment can't be checked, the order gets a note saying what to check in Paddle and how to release it.
+* Fixed: a fully refunded Paddle payment can't complete an order when the buyer returns to the store.
+* Fixed: a subscription started by a duplicate Paddle payment no longer takes the place of the customer's subscription, and canceling the duplicate in Paddle no longer cancels it. Subscriptions already linked wrongly or canceled this way need a manual check.
 
 = 2.0.1 =
 * Improved: Payment Gateway Tools names Creem among the gateways you can duplicate.
