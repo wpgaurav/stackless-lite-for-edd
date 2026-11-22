@@ -2,6 +2,8 @@
 
 namespace StacklessEDD\Modules\SquareGateway;
 
+use StacklessEDD\Core\ExternalRefunds;
+
 defined('ABSPATH') || exit;
 
 /**
@@ -65,8 +67,11 @@ final class Refunds
         parse_str((string) wp_unslash($_POST['data']), $form_data); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- parsed, then sanitized on the next line.
         $form_data = map_deep($form_data, 'sanitize_text_field');
         // phpcs:enable
-        if (!class_exists(\EDD\Orders\Refunds\FormParser::class) || !\EDD\Orders\Refunds\FormParser::verify_nonce($form_data) || empty($form_data[self::FIELD])) {
+        if (!\StacklessEDD\Core\RefundForm::supported() || !\EDD\Orders\Refunds\FormParser::verify_nonce($form_data) || empty($form_data[self::FIELD])) {
             return;
+        }
+        if (!stackless_edd_order_accepts_refund((int) $order->id)) {
+            return; // EDD's own handler refuses this refund, so no money may move.
         }
         try {
             $validator = new \EDD\Orders\Refunds\Validator($order, \EDD\Orders\Refunds\FormParser::parse_order_items($form_data), \EDD\Orders\Refunds\FormParser::parse_adjustments($form_data));
@@ -201,7 +206,7 @@ final class Refunds
         add_filter('edd_is_order_refundable_by_override', '__return_true');
         try {
             if ($amount >= $remaining - 0.5 / (10 ** max(0, $decimals))) {
-                return edd_refund_order($order_id);
+                return ExternalRefunds::record($order_id);
             }
             $items = [];
             foreach ($order->get_items() as $item) {
@@ -221,7 +226,7 @@ final class Refunds
             if ($allocation === null) {
                 return new \WP_Error('stackless_edd_square_refund', __('The refunded amount could not be matched to the order items.', 'stackless-lite-edd'));
             }
-            return edd_refund_order($order_id, $allocation, []);
+            return ExternalRefunds::record($order_id, $allocation, []);
         } finally {
             remove_filter('edd_is_order_refundable_by_override', '__return_true');
             self::$syncing = false;

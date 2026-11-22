@@ -26,6 +26,8 @@ final class Payments
     public const META_SAVE = '_stackless_edd_stripe_save_method';
     public const META_OFF_SESSION = '_stackless_edd_stripe_off_session';
     public const META_REFUNDS = '_stackless_edd_stripe_refund_ids';
+    /** Refund ids accounted for, kept from the first refund left to the merchant on the order. */
+    public const META_REFUNDS_SETTLED = '_stackless_edd_stripe_refunds_settled';
     public const META_DISPUTE = '_stackless_edd_stripe_dispute_id';
     public const META_FLOW = '_stackless_edd_stripe_flow';
     public const META_AMOUNT_MISMATCH = '_stackless_edd_stripe_amount_mismatch';

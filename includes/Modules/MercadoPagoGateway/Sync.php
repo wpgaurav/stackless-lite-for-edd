@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\MercadoPagoGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -159,7 +160,8 @@ class Sync
             }
             $orderId = (int) $order->id;
             $paymentId = (string) ($payment['id'] ?? '');
-            if (Orders::isPaid($order)) {
+            // A refund notification carries the approved payment too: it never releases a dispute's hold.
+            if (Orders::isPaid($order) || ExternalRefunds::heldAfterPayment($order)) {
                 if (Orders::meta($orderId, Gateway::META_PAYMENT_ID) === '' && $paymentId !== '') {
                     Orders::setMeta($orderId, Gateway::META_PAYMENT_ID, $paymentId);
                 }
@@ -277,7 +279,13 @@ class Sync
         $orderId = (int) $order->id;
         return (string) Lock::run('refund-' . $orderId, function () use ($orderId, $refunds, $payment) {
             $order = Orders::get($orderId);
-            if (!$order || !Orders::isPaid($order)) {
+            if (!$order) {
+                return '';
+            }
+            if (ExternalRefunds::heldBeforePayment($order)) {
+                return self::leaveUnpaid($order, $refunds, $payment);
+            }
+            if (!Orders::isPaid($order) && !ExternalRefunds::heldAfterPayment($order)) {
                 return '';
             }
             if (Orders::meta($orderId, Gateway::META_PAYMENT_ID) !== (string) ($payment['id'] ?? '')) {
@@ -308,6 +316,35 @@ class Sync
             }
             return $recorded ? 'refunded ' . $recorded : '';
         }, 'busy');
+    }
+
+    /**
+     * A refund of a payment that holds the order without paying it is not recorded. When the store
+     * refuses refunds it is the merchant's to record.
+     *
+     * @param array<int,array<string,mixed>> $refunds
+     * @param array<string,mixed>            $payment
+     */
+    private static function leaveUnpaid(Order $order, array $refunds, array $payment): string
+    {
+        if ((string) $order->mode === 'live' && ($payment['live_mode'] ?? null) === false) {
+            return ''; // A test payment: no money moved.
+        }
+        $orderId = (int) $order->id;
+        $currency = strtoupper((string) ($payment['currency_id'] ?? $order->currency));
+        $left = 0;
+        foreach ($refunds as $refund) {
+            $id = (string) ($refund['id'] ?? '');
+            $amount = Money::amount((float) ($refund['amount'] ?? 0), $currency);
+            if ($id === '' || $amount <= 0 || self::hasRefundId($orderId, $id) || !in_array((string) ($refund['status'] ?? 'approved'), ['approved', 'authorized'], true)) {
+                continue;
+            }
+            if (ExternalRefunds::leftToMerchant('Mercado Pago', $order, $amount, $id, null, null, $currency)) {
+                self::recordRefundId($orderId, $id);
+                $left++;
+            }
+        }
+        return $left ? 'left to the merchant ' . $left : '';
     }
 
     private function noteChargeback(Order $order, array $payment): string

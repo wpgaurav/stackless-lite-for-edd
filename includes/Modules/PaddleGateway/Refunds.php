@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\PaddleGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -261,6 +262,12 @@ class Refunds
 
             $currency = strtoupper((string) $order->currency);
             if (strtoupper((string) ($adjustment['currency_code'] ?? $currency)) !== $currency) {
+                $given = strtoupper((string) $adjustment['currency_code']);
+                // When the store refuses the refund, the merchant also gets the alert.
+                if (ExternalRefunds::leftToMerchant('Paddle', $order, Money::fromMinor((int) ($adjustment['totals']['total'] ?? 0), $given), $id, null, null, $given)) {
+                    self::recordId($orderId, $id);
+                    return 'left to the merchant';
+                }
                 self::recordId($orderId, $id);
                 stackless_edd_add_order_note($orderId, __('Paddle reported a refund in a different currency. Record it manually.', 'stackless-lite-edd'));
                 return 'currency mismatch';
@@ -274,6 +281,10 @@ class Refunds
                 return 'nothing left';
             }
             $created = Orders::recordRefund($order, $amount);
+            if (ExternalRefunds::leftToMerchant('Paddle', $order, $amount, $id, $created)) {
+                self::recordId($orderId, $id);
+                return 'left to the merchant';
+            }
             if (is_wp_error($created)) {
                 throw new \RuntimeException(esc_html($created->get_error_message()));
             }
@@ -330,8 +341,11 @@ class Refunds
         if (!$order || !$gateway || !$form || empty($form[self::FIELD])) {
             return;
         }
-        if (!class_exists(\EDD\Orders\Refunds\FormParser::class) || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
+        if (!\StacklessEDD\Core\RefundForm::supported() || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
             return; // EDD's own handler answers with the nonce error.
+        }
+        if (!stackless_edd_order_accepts_refund((int) $order->id)) {
+            return; // EDD's own handler refuses this refund, so no money may move.
         }
         try {
             $validator = new \EDD\Orders\Refunds\Validator($order, \EDD\Orders\Refunds\FormParser::parse_order_items($form), \EDD\Orders\Refunds\FormParser::parse_adjustments($form));

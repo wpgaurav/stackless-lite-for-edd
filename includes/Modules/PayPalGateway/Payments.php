@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\PayPalGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -515,7 +516,7 @@ class Payments
                 return new \WP_Error('stackless_edd_paypal_order', __('Order not found.', 'stackless-lite-edd'));
             }
             $orderId = (int) $order->id;
-            if (Orders::isPaid($order) && Orders::meta($orderId, SubscriptionData::META_TOKEN_ID) !== '') {
+            if (ExternalRefunds::heldAfterPayment($order) || (Orders::isPaid($order) && Orders::meta($orderId, SubscriptionData::META_TOKEN_ID) !== '')) {
                 return true;
             }
             $saved = $this->vaultSetupToken($setupToken, $order);
@@ -937,10 +938,17 @@ class Payments
         if ($authId === '' || Orders::meta($orderId, Gateway::META_CAPTURE_ID) !== '' || (string) $order->gateway !== Gateway::ID) {
             return;
         }
+        $currency = (string) $order->currency;
+        $amount = $this->leftToCapture($order);
+        if ($amount <= 0) {
+            /* translators: %s: authorization id */
+            Orders::note($orderId, sprintf(__('PayPal authorization %s was not captured: after refunds there is nothing to capture. It expires unless you void it in PayPal.', 'stackless-lite-edd'), $authId));
+            return;
+        }
         $environment = Orders::meta($orderId, Gateway::META_ENV);
         $api = $this->gateway->apiFor($environment !== '' ? $environment : $this->gateway->environment());
         $response = $api->captureAuthorization($authId, [
-            'amount' => Amount::money((float) $order->total, (string) $order->currency),
+            'amount' => Amount::money($amount, $currency),
             'final_capture' => true,
             'invoice_id' => Amount::truncate($this->gateway->invoicePrefix() . $order->get_number(), 127),
         ], 'stackless-edd-auth-capture-' . $authId);
@@ -954,22 +962,36 @@ class Payments
 
         $captureId = (string) ($response['id'] ?? '');
         Orders::setMeta($orderId, Gateway::META_CAPTURE_ID, $captureId);
-        if ($captureId !== '' && function_exists('edd_add_order_transaction') && !edd_get_order_transaction_by('transaction_id', $captureId)) {
-            edd_add_order_transaction([
-                'object_id' => $orderId,
-                'object_type' => 'order',
-                'transaction_id' => $captureId,
-                'gateway' => Gateway::ID,
-                'status' => 'complete',
-                'total' => (float) $order->total,
-            ]);
-        }
+        $this->recordCapture($orderId, $captureId, $amount);
         Orders::note($orderId, sprintf(
             /* translators: 1: capture id, 2: status */
             __('PayPal authorization captured (%1$s, %2$s).', 'stackless-lite-edd'),
             $captureId,
             strtolower((string) ($response['status'] ?? ''))
         ));
+    }
+
+    /** What releasing an authorization takes: the total less refunds, as PayPal counts the currency. */
+    public function leftToCapture(Order $order): float
+    {
+        $left = min((float) $order->total, (float) edd_get_order_total((int) $order->id));
+        return (float) Amount::format(max(0.0, $left), (string) $order->currency);
+    }
+
+    /** A capture's transaction, for the amount captured. */
+    public function recordCapture(int $orderId, string $captureId, float $amount): void
+    {
+        if ($captureId === '' || !function_exists('edd_add_order_transaction') || edd_get_order_transaction_by('transaction_id', $captureId)) {
+            return;
+        }
+        edd_add_order_transaction([
+            'object_id' => $orderId,
+            'object_type' => 'order',
+            'transaction_id' => $captureId,
+            'gateway' => Gateway::ID,
+            'status' => 'complete',
+            'total' => $amount,
+        ]);
     }
 
     public function voidAuthorization(Order $order): void

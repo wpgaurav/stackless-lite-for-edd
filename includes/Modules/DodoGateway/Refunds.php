@@ -140,8 +140,11 @@ class Refunds
         if (!$order || !$gateway || !$form || empty($form[self::FIELD])) {
             return;
         }
-        if (!class_exists(\EDD\Orders\Refunds\FormParser::class) || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
+        if (!\StacklessEDD\Core\RefundForm::supported() || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
             return; // EDD's own handler answers with the nonce error.
+        }
+        if (!stackless_edd_order_accepts_refund((int) $order->id)) {
+            return; // EDD's own handler refuses this refund, so no money may move.
         }
         try {
             $validator = new \EDD\Orders\Refunds\Validator($order, \EDD\Orders\Refunds\FormParser::parse_order_items($form), \EDD\Orders\Refunds\FormParser::parse_adjustments($form));

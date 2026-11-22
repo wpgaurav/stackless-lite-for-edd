@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\PayPalGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -265,7 +266,17 @@ final class Webhook
             if (Orders::isPaid($order) && Orders::meta($orderId, Gateway::META_CAPTURE_ID) === $captureId) {
                 return 'already paid';
             }
-            if (!Amount::matches((array) ($capture['amount'] ?? []), (float) $order->total, (string) $order->currency)) {
+            $expected = (float) $order->total;
+            if (Orders::isPaid($order) && Orders::meta($orderId, Gateway::META_AUTH_ID) !== '' && Orders::meta($orderId, Gateway::META_CAPTURE_ID) === '') {
+                // A released authorization captures what refunds left. This event can beat PayPal's answer to that request, or be all there is of it.
+                $payments = $this->gateway->payments();
+                $left = $payments->leftToCapture($order);
+                if ($left > 0 && Amount::matches((array) ($capture['amount'] ?? []), $left, (string) $order->currency)) {
+                    $expected = $left;
+                    $payments->recordCapture($orderId, $captureId, $left);
+                }
+            }
+            if (!Amount::matches((array) ($capture['amount'] ?? []), $expected, (string) $order->currency)) {
                 $note = sprintf(
                     /* translators: 1: captured amount, 2: order total */
                     __('PayPal reported a capture of %1$s but the order total is %2$s. Check it in PayPal before delivering the order.', 'stackless-lite-edd'),
@@ -283,6 +294,10 @@ final class Webhook
             if (!Orders::isPaid($order)) {
                 /* translators: %s: capture id */
                 stackless_edd_complete_order($orderId, $captureId, sprintf(__('PayPal confirmed the payment (%s).', 'stackless-lite-edd'), $captureId));
+            } elseif (ExternalRefunds::heldAfterPayment($order)) {
+                // Not stackless_edd_complete_order(): it would release the hold.
+                /* translators: %s: capture id */
+                Orders::note($orderId, sprintf(__('PayPal confirmed capture %s while this paid order is on hold. The hold stays. Check in PayPal that the customer was not charged twice.', 'stackless-lite-edd'), $captureId));
             } else {
                 stackless_edd_complete_order($orderId, $captureId);
             }
@@ -354,6 +369,11 @@ final class Webhook
             }
             $orderId = (int) $order->id;
             if (strtoupper((string) ($refund['amount']['currency_code'] ?? '')) !== strtoupper((string) $order->currency)) {
+                // When the store refuses the refund, the merchant also gets the alert.
+                if (ExternalRefunds::leftToMerchant('PayPal', $order, (float) ($refund['amount']['value'] ?? 0), $refundId, null, null, (string) ($refund['amount']['currency_code'] ?? ''))) {
+                    $payments->recordRefundId($orderId, $refundId);
+                    return 'left to the merchant';
+                }
                 Orders::note($orderId, __('PayPal reported a refund in a different currency. Record it manually.', 'stackless-lite-edd'));
                 $payments->recordRefundId($orderId, $refundId);
                 return 'currency mismatch';

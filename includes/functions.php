@@ -408,6 +408,16 @@ function stackless_edd_complete_order(int $order_id, string $transaction_id = ''
     return (bool) edd_update_order_status($order_id, 'complete');
 }
 
+/**
+ * Whether edd_refund_order() would take a refund of this order: the two checks it makes before
+ * validating amounts. Gateways ask before they refund at the provider, which happens first.
+ */
+function stackless_edd_order_accepts_refund(int $order_id): bool
+{
+    // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- EDD's own filter.
+    return edd_is_order_refundable($order_id) !== false && apply_filters('edd_should_process_order_refund', true, $order_id) === true;
+}
+
 /** A note on an order's Notes panel. */
 function stackless_edd_add_order_note(int $order_id, string $note): void
 {
@@ -485,6 +495,26 @@ function stackless_edd_add_payment_method_url(string $gateway_id, int $subscript
 function stackless_edd_cart_item_is_locked(int $download_id, array $options): bool
 {
     return (bool) apply_filters('stackless_edd_cart_item_is_locked', false, $download_id, $options);
+}
+
+/**
+ * True while this download is in the cart, or being put there, to pay an existing order. EDD checks
+ * can_purchase() on every cart read, so a who-can-buy answer must not drop such a line.
+ */
+function stackless_edd_is_paying_locked_line(int $download_id): bool
+{
+    if (doing_action('edd_recover_payment')) {
+        return true;
+    }
+    $cart = function_exists('EDD') ? EDD()->cart : null;
+    // The raw contents: edd_get_cart_contents() would call can_purchase() again.
+    foreach (is_object($cart) && is_array($cart->contents) ? $cart->contents : [] as $item) {
+        if (is_array($item) && (int) ($item['id'] ?? 0) === $download_id
+            && stackless_edd_cart_item_is_locked($download_id, isset($item['options']) && is_array($item['options']) ? $item['options'] : [])) {
+            return true;
+        }
+    }
+    return false;
 }
 
 /** True when any line in the cart is locked (see stackless_edd_cart_item_is_locked()). */

@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\PaystackGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -268,6 +269,11 @@ class Sync
         }
         $currency = strtoupper((string) $order->currency);
         if (strtoupper((string) ($refund['currency'] ?? $currency)) !== $currency) {
+            // When the store refuses the refund, the merchant also gets the alert.
+            if (ExternalRefunds::leftToMerchant('Paystack', $order, Money::fromMinor((int) ($refund['amount'] ?? 0)), $refundId, null, null, strtoupper((string) $refund['currency']))) {
+                self::recordRefundId($orderId, $refundId);
+                return 'left to the merchant';
+            }
             self::recordRefundId($orderId, $refundId);
             Orders::note($orderId, __('Paystack reported a refund in a different currency. Record it manually.', 'stackless-lite-edd'));
             return 'currency mismatch';

@@ -431,7 +431,7 @@ final class Module extends \StacklessEDD\Core\Module
         if (is_admin() && !wp_doing_ajax()) {
             return $canPurchase;
         }
-        return $this->hides((int) $download->ID) ? false : $canPurchase;
+        return $this->hides((int) $download->ID) && !stackless_edd_is_paying_locked_line((int) $download->ID) ? false : $canPurchase;
     }
 
     /**
@@ -469,7 +469,7 @@ final class Module extends \StacklessEDD\Core\Module
     public function validateCheckout($validData = [], $post = []): void
     {
         foreach ((array) edd_get_cart_contents() as $item) {
-            if (is_array($item) && $this->hides($item['id'] ?? 0)) {
+            if (is_array($item) && $this->hides($item['id'] ?? 0) && !stackless_edd_cart_item_is_locked((int) ($item['id'] ?? 0), (array) ($item['options'] ?? []))) {
                 // EDD documents the error id as int; it is a string key.
                 edd_set_error('stackless_edd_hide_price_until_login', esc_html__('Please log in to buy this download.', 'stackless-lite-edd')); // @phpstan-ignore argument.type
                 return;

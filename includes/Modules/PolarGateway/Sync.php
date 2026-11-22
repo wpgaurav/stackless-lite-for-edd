@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\PolarGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -192,7 +193,8 @@ class Sync
             }
             $orderId = (int) $order->id;
             $polarId = (string) ($polarOrder['id'] ?? '');
-            if (Orders::isPaid($order)) {
+            // Polar sends order.updated with every refund: it never releases a dispute's hold.
+            if (Orders::isPaid($order) || ExternalRefunds::heldAfterPayment($order)) {
                 if (Orders::meta($orderId, Gateway::META_ORDER_ID) === '' && $polarId !== '') {
                     Orders::setMeta($orderId, Gateway::META_ORDER_ID, $polarId);
                 }
@@ -248,7 +250,8 @@ class Sync
     {
         return (string) Lock::run('order-' . $order->id, function () use ($order, $remote, $mode) {
             $order = Orders::get((int) $order->id);
-            if (!$order || Orders::isPaid($order)) {
+            // A returning buyer or the trial's own event does not release a hold placed after it started.
+            if (!$order || Orders::isPaid($order) || ExternalRefunds::heldAfterPayment($order)) {
                 return 'already paid';
             }
             if ((float) $order->total > 0) {
@@ -419,6 +422,11 @@ class Sync
             $orderId = (int) $order->id;
             $currency = strtolower((string) ($refund['currency'] ?? $order->currency));
             if ($currency !== strtolower((string) $order->currency)) {
+                // When the store refuses the refund, the merchant also gets the alert.
+                if (ExternalRefunds::leftToMerchant('Polar', $order, Money::fromMinor((int) ($refund['amount'] ?? 0), $currency), $refundId, null, null, $currency)) {
+                    self::recordRefundId($orderId, $refundId);
+                    return 'left to the merchant';
+                }
                 self::recordRefundId($orderId, $refundId);
                 Orders::note($orderId, __('Polar reported a refund in a different currency. Record it manually.', 'stackless-lite-edd'));
                 return 'currency mismatch';

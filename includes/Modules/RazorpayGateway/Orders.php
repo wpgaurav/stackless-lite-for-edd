@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\RazorpayGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -103,6 +104,13 @@ final class Orders
             self::addTransaction($orderId, $transactionId, (float) $order->total);
         }
         stackless_edd_complete_order($orderId);
+    }
+
+    /** Whether this is the payment that already paid the order once, whatever its status says now. */
+    public static function paidWith(Order $order, string $paymentId): bool
+    {
+        return $paymentId !== '' && ExternalRefunds::wasPaid($order)
+            && (bool) edd_get_order_transactions(['object_id' => (int) $order->id, 'object_type' => 'order', 'transaction_id' => $paymentId, 'number' => 1]);
     }
 
     /** @param string|string[] $statuses */

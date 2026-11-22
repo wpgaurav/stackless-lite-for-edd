@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\MollieGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -370,6 +371,9 @@ final class Sync
         } catch (\Throwable $e) {
             $ids = array_values(array_diff(self::knownRefunds($orderId), [$id]));
             Orders::updateMeta($orderId, Gateway::META_REFUND_IDS, $ids);
+            if ($e->getCode() === ExternalRefunds::NOT_SAVED) {
+                throw $e; // Mollie must call again, or nobody hears of this refund.
+            }
             $this->gateway->log('Could not record Mollie refund ' . $id . ' on order ' . $orderId . ': ' . $e->getMessage(), 'error');
         }
     }

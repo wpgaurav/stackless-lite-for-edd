@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\RazorpayGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -81,8 +82,11 @@ final class Refunds
             return;
         }
         $form = self::formData();
-        if (!$form || empty($form[self::FIELD]) || !class_exists(\EDD\Orders\Refunds\FormParser::class) || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
+        if (!$form || empty($form[self::FIELD]) || !\StacklessEDD\Core\RefundForm::supported() || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
             return;
+        }
+        if (!stackless_edd_order_accepts_refund((int) $order->id)) {
+            return; // EDD's own handler refuses this refund, so no money may move.
         }
         try {
             $validator = new \EDD\Orders\Refunds\Validator($order, \EDD\Orders\Refunds\FormParser::parse_order_items($form), \EDD\Orders\Refunds\FormParser::parse_adjustments($form));
@@ -207,7 +211,7 @@ final class Refunds
      * Record a refund that was made in the Razorpay dashboard (never sent back to Razorpay). A full
      * refund refunds every item; a partial one is spread over the items in order.
      *
-     * @return int|\WP_Error EDD refund order id
+     * @return int|\WP_Error EDD refund order id, 0 when none was created
      */
     public static function recordExternal(Order $order, float $amount, string $transactionId = '')
     {
@@ -218,7 +222,7 @@ final class Refunds
         add_filter('edd_is_order_refundable_by_override', '__return_true');
         try {
             if ($amount >= $remaining - 0.5 / (10 ** max(0, $decimals))) {
-                $result = edd_refund_order($orderId);
+                $result = ExternalRefunds::record($orderId);
             } else {
                 $items = [];
                 foreach ($order->get_items() as $item) {
@@ -235,14 +239,19 @@ final class Refunds
                     ];
                 }
                 $allocation = self::allocate($items, $amount, $decimals);
-                if ($allocation === null) {
-                    return new \WP_Error('stackless_edd_razorpay_refund', __('The refunded amount could not be matched to the order items.', 'stackless-lite-edd'));
-                }
-                $result = edd_refund_order($orderId, $allocation, []);
+                $result = $allocation === null
+                    ? new \WP_Error('stackless_edd_razorpay_refund', __('The refunded amount could not be matched to the order items.', 'stackless-lite-edd'))
+                    : ExternalRefunds::record($orderId, $allocation, []);
             }
         } finally {
             remove_filter('edd_is_order_refundable_by_override', '__return_true');
             self::$syncing = false;
+        }
+        $forget = static function () use ($orderId, $transactionId) {
+            Sync::forgetRefund($orderId, $transactionId);
+        };
+        if (ExternalRefunds::leftToMerchant('Razorpay', $order, $amount, $transactionId, $result, $forget)) {
+            return 0;
         }
         if (is_wp_error($result)) {
             return $result;

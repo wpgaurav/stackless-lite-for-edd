@@ -29,6 +29,25 @@ final class ProductSettings
         add_action('edd_download_price_option_row', [$this, 'variationFields'], 25, 3);
         add_action('edd_save_download', [$this, 'save'], 20, 2);
         add_action('admin_notices', [$this, 'notices']);
+        add_filter('stackless_edd_is_pay_what_you_like_download', [$this, 'isPayWhatYouLike'], 10, 3);
+    }
+
+    /**
+     * stackless_edd_is_pay_what_you_like_download: true for a download or price option that takes an
+     * amount the shopper names, so price-changing modules (Sale Campaigns) leave its display and
+     * minimum alone.
+     *
+     * @param mixed $is
+     * @param mixed $downloadId
+     * @param mixed $priceId
+     * @return mixed
+     */
+    public function isPayWhatYouLike($is, $downloadId = 0, $priceId = null)
+    {
+        if ($is === true) {
+            return $is;
+        }
+        return $this->settingsFor((int) $downloadId, is_numeric($priceId) ? (int) $priceId : null) !== null ? true : $is;
     }
 
     private static function decimals(): int

@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\FlutterwaveGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -18,10 +19,10 @@ final class Orders
         return $order instanceof Order ? $order : null;
     }
 
-    /** Paid, or past paid (partially refunded, refunded, revoked). */
+    /** Paid, past paid (partially refunded, refunded, revoked), or on hold since it was paid. */
     public static function isPaid(Order $order): bool
     {
-        return in_array((string) $order->status, edd_get_complete_order_statuses(), true);
+        return in_array((string) $order->status, edd_get_complete_order_statuses(), true) || ExternalRefunds::heldAfterPayment($order);
     }
 
     public static function meta(int $orderId, string $key): string

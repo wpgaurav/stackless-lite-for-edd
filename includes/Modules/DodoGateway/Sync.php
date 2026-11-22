@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\DodoGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -445,6 +446,11 @@ class Sync
             $orderCurrency = strtoupper((string) $order->currency);
             $currency = strtoupper((string) ($refund['currency'] ?? $orderCurrency));
             if ($currency !== $orderCurrency) {
+                // When the store refuses the refund, the merchant also gets the alert.
+                if (ExternalRefunds::leftToMerchant('Dodo Payments', $order, Money::fromMinor((int) ($refund['amount'] ?? 0), $currency), $refundId, null, null, $currency)) {
+                    self::recordRefundId($orderId, $refundId);
+                    return 'left to the merchant';
+                }
                 self::recordRefundId($orderId, $refundId);
                 stackless_edd_add_order_note($orderId, __('Dodo Payments reported a refund in a different currency. Record it manually.', 'stackless-lite-edd'));
                 return 'currency mismatch';
@@ -456,6 +462,10 @@ class Sync
                 return 'nothing left';
             }
             $created = Orders::recordRefund($order, $amount);
+            if (ExternalRefunds::leftToMerchant('Dodo Payments', $order, $amount, $refundId, $created)) {
+                self::recordRefundId($orderId, $refundId);
+                return 'left to the merchant';
+            }
             if (is_wp_error($created)) {
                 throw new \RuntimeException(esc_html($created->get_error_message()));
             }

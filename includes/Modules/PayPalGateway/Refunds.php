@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\PayPalGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -71,8 +72,11 @@ final class Refunds
             return;
         }
         $form = self::formData();
-        if (!$form || empty($form[self::FIELD]) || !class_exists(\EDD\Orders\Refunds\FormParser::class) || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
+        if (!$form || empty($form[self::FIELD]) || !\StacklessEDD\Core\RefundForm::supported() || !\EDD\Orders\Refunds\FormParser::verify_nonce($form)) {
             return;
+        }
+        if (!stackless_edd_order_accepts_refund((int) $order->id)) {
+            return; // EDD's own handler refuses this refund, so no money may move.
         }
         try {
             $validator = new \EDD\Orders\Refunds\Validator($order, \EDD\Orders\Refunds\FormParser::parse_order_items($form), \EDD\Orders\Refunds\FormParser::parse_adjustments($form));
@@ -153,9 +157,10 @@ final class Refunds
     /**
      * A refund made in PayPal: record it in EDD. A full refund refunds what is left; a partial one
      * is spread across the order's items in proportion. When EDD cannot express it (for example a
-     * refund that only covers fees), the order is marked partially refunded with a note.
+     * refund that only covers fees), the order is marked partially refunded
+     * (an order on hold stays on hold) with a note.
      *
-     * @return int EDD refund id, 0 when only the status and a note were recorded.
+     * @return int EDD refund id, 0 when it was only noted, or left to the merchant by the store's filter.
      */
     public static function recordExternal(Order $order, float $amount, string $transactionId, string $note): int
     {
@@ -167,21 +172,27 @@ final class Refunds
 
         $items = $full ? 'all' : self::partialItems($order, $amount, $decimals);
         if ($items === []) {
+            if (ExternalRefunds::leftToMerchant('PayPal', $order, $amount, $transactionId)) {
+                return 0;
+            }
             Orders::note($orderId, $note);
-            edd_update_order_status($orderId, 'partially_refunded');
+            ExternalRefunds::markPartlyRefunded($orderId);
             return 0;
         }
 
         add_filter('edd_is_order_refundable_by_override', '__return_true');
-        $refundId = edd_refund_order($orderId, $items, $full ? 'all' : []);
+        $refundId = ExternalRefunds::record($orderId, $items, $full ? 'all' : []);
         remove_filter('edd_is_order_refundable_by_override', '__return_true');
 
         if (is_wp_error($refundId) || !$refundId) {
+            if (ExternalRefunds::leftToMerchant('PayPal', $order, $amount, $transactionId, $refundId)) {
+                return 0;
+            }
             if ($full) {
                 throw new \RuntimeException(esc_html(is_wp_error($refundId) ? $refundId->get_error_message() : 'EDD did not create the refund.'));
             }
             Orders::note($orderId, $note);
-            edd_update_order_status($orderId, 'partially_refunded');
+            ExternalRefunds::markPartlyRefunded($orderId);
             return 0;
         }
         Orders::note($orderId, $note);

@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\CreemGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 use StacklessEDD\Core\ExtraPayments;
 
 defined('ABSPATH') || exit;
@@ -753,6 +754,11 @@ class Sync
             $orderId = (int) $order->id;
             $currency = strtoupper((string) ($refund['refund_currency'] ?? $order->currency));
             if ($currency !== strtoupper((string) $order->currency)) {
+                // When the store refuses the refund, the merchant also gets the alert.
+                if (ExternalRefunds::leftToMerchant('Creem', $order, Money::fromMinor((int) ($refund['refund_amount'] ?? 0), $currency), $refundId, null, null, $currency)) {
+                    self::recordRefundId($orderId, $refundId);
+                    return 'left to the merchant';
+                }
                 self::recordRefundId($orderId, $refundId);
                 Orders::note($orderId, __('Creem reported a refund in a different currency. Record it manually.', 'stackless-lite-edd'));
                 return 'currency mismatch';
@@ -768,7 +774,7 @@ class Sync
                 __('Refunded %1$s in Creem (%2$s).', 'stackless-lite-edd'),
                 Orders::money($amount, (string) $order->currency),
                 $refundId
-            ));
+            ), $refundId);
             self::recordRefundId($orderId, $refundId);
             return 'refunded';
         }, 'busy');

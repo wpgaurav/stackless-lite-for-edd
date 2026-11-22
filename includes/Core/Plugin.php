@@ -36,6 +36,8 @@ final class Plugin
         LiveStore::boot();
         Notices::boot();
         ExtraPayments::boot();
+        ExternalRefunds::boot();
+        RefundForm::boot();
         Account::boot();
         BuyerName::boot();
         $this->modules->discover();

@@ -21,7 +21,7 @@ return [
             __('Daily, weekly, monthly or yearly plans on any download or price option', 'stackless-lite-edd'),
             __('Free trials, signup fees and fixed numbers of payments', 'stackless-lite-edd'),
             __('Mixed carts with subscriptions and one-time downloads in one order', 'stackless-lite-edd'),
-            __('Automatic renewals through Stripe, PayPal, Razorpay, Mollie or Square, or renewal invoices customers pay by link', 'stackless-lite-edd'),
+            __('Automatic renewals through Stripe, PayPal, Razorpay, Mollie, Square, Revolut, Airwallex (beta) or Braintree, or renewal invoices customers pay by link', 'stackless-lite-edd'),
             __('Failed-payment retries, a grace period and renewal and trial-ending reminders', 'stackless-lite-edd'),
             __('Customers cancel, renew early, turn auto-renew off or switch plans with proration', 'stackless-lite-edd'),
             __('Customers pause or skip a renewal and say why they cancel, with offers to stay', 'stackless-lite-edd'),
@@ -50,6 +50,17 @@ return [
             __('Choose per payment method: leave on EDD Recurring, keep the saved Stripe card, or renew by pay link', 'stackless-lite-edd'),
             __('Resumable import that never brings a subscription over twice and checks each one', 'stackless-lite-edd'),
             __('Turns migrated downloads into Stackless plans and runs from WP-CLI too', 'stackless-lite-edd'),
+        ],
+    ],
+    'subscription-save-offers' => [
+        'title' => __('Subscription Save Offers', 'stackless-lite-edd'),
+        'description' => __('Ask why customers cancel and make 1 offer that fits the reason, before the subscription ends.', 'stackless-lite-edd'),
+        'group' => 'subscriptions',
+        'icon' => 'heart',
+        'features' => [
+            __('A renewal discount, a pause, a skipped payment, a cheaper or yearly plan, or your own message', 'stackless-lite-edd'),
+            __('Declining cancels with no more questions; every attempt is logged with the save rate by reason', 'stackless-lite-edd'),
+            __('1 optional win-back email after a subscription ends, with a one-click unsubscribe', 'stackless-lite-edd'),
         ],
     ],
     'on-page-checkout' => [
@@ -96,6 +107,29 @@ return [
             __('Percentage off, amount off, a fixed price or the regular price', 'stackless-lite-edd'),
             __('Download image, custom image or no image', 'stackless-lite-edd'),
             __('Take rates for every bump', 'stackless-lite-edd'),
+        ],
+    ],
+    'sale-campaigns' => [
+        'title' => __('Sale Campaigns', 'stackless-lite-edd'),
+        'description' => __('Scheduled sales that start and end by themselves, with sale prices, a badge and a countdown to the real end.', 'stackless-lite-edd'),
+        'group' => 'sales',
+        'icon' => 'tag',
+        'features' => [
+            __('A percentage or fixed amount off the whole store, chosen categories, downloads or price options', 'stackless-lite-edd'),
+            __('Regular prices back on time, because download prices are never changed', 'stackless-lite-edd'),
+            __('A countdown block and shortcode, and an optional announcement bar', 'stackless-lite-edd'),
+            __('Works with the EDD Checkout block, the [download_checkout] shortcode and Multi-Currency', 'stackless-lite-edd'),
+        ],
+    ],
+    'cart-goals' => [
+        'title' => __('Cart Goals', 'stackless-lite-edd'),
+        'description' => __('A progress bar toward spend goals at checkout and in the cart widget, with a discount granted automatically.', 'stackless-lite-edd'),
+        'group' => 'checkout',
+        'icon' => 'tag-starred',
+        'features' => [
+            __('Up to 3 goals, each with a percentage or flat discount as the reward', 'stackless-lite-edd'),
+            __('Discounts added and removed automatically, checked on the server', 'stackless-lite-edd'),
+            __('Works with the EDD Checkout block, the [download_checkout] shortcode and the cart widget', 'stackless-lite-edd'),
         ],
     ],
     'custom-invoices' => [
@@ -193,6 +227,18 @@ return [
             __('A My pages tab on the account page', 'stackless-lite-edd'),
         ],
     ],
+    'purchase-rules' => [
+        'title' => __('Purchase Rules', 'stackless-lite-edd'),
+        'description' => __('Choose who can buy a download, and from which countries.', 'stackless-lite-edd'),
+        'group' => 'access',
+        'icon' => 'shield-lock',
+        'features' => [
+            __('Limit buyers by role, FluentCRM tag or WP Fusion tag, or to one purchase each', 'stackless-lite-edd'),
+            __('Country lock by visitor location from Cloudflare and other CDN headers', 'stackless-lite-edd'),
+            __('Country lock by billing country, with the checkout country list trimmed to match', 'stackless-lite-edd'),
+            __('Store-wide rule with per-download and per-price-option overrides', 'stackless-lite-edd'),
+        ],
+    ],
     'product-feed' => [
         'title' => __('Google Product Feed', 'stackless-lite-edd'),
         'description' => __('A Google Merchant Center feed of your downloads for free listings and Shopping ads, rebuilt when downloads change.', 'stackless-lite-edd'),
@@ -203,6 +249,17 @@ return [
             __('Rebuilt a few minutes after downloads change, and once a day', 'stackless-lite-edd'),
             __('Leaves out what Google does not allow, and shows each left-out download with the reason', 'stackless-lite-edd'),
             __('Google category mapping per download category, with ebooks kept out of Shopping ads', 'stackless-lite-edd'),
+        ],
+    ],
+    'frequently-bought-together' => [
+        'title' => __('Frequently Bought Together', 'stackless-lite-edd'),
+        'description' => __('The download with up to 3 companions, a combined total and one button that adds the checked items.', 'stackless-lite-edd'),
+        'group' => 'catalog',
+        'icon' => 'shopping-cart-plus',
+        'features' => [
+            __('Your picks per download first, then downloads from paid order history', 'stackless-lite-edd'),
+            __('An optional set discount, a real EDD discount code that comes off when an item leaves the cart', 'stackless-lite-edd'),
+            __('Automatic placement on the download page, a block and a shortcode', 'stackless-lite-edd'),
         ],
     ],
     'product-addons' => [

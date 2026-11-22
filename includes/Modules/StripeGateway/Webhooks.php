@@ -2,6 +2,8 @@
 
 namespace StacklessEDD\Modules\StripeGateway;
 
+use StacklessEDD\Core\ExternalRefunds;
+
 defined('ABSPATH') || exit;
 
 /**
@@ -209,6 +211,16 @@ final class Webhooks
         $remaining = function_exists('edd_get_order_total') ? (float) edd_get_order_total($order_id) : (float) $order->total;
         $edd_refunded = round((float) $order->total - $remaining, $decimals);
         $difference = round($stripe_refunded - $edd_refunded, $decimals);
+        $settled = Orders::meta($order_id, Payments::META_REFUNDS_SETTLED);
+        $settled = is_array($settled) ? array_map('strval', $settled) : [];
+        $refunds = [];
+        if ($settled) {
+            // One was left to the merchant, who may record it at any time: totals no longer say what is new, ids do.
+            $refunds = self::refundsOf($intent_id, $mode, $currency);
+            $own = Orders::meta($order_id, Payments::META_REFUNDS);
+            $new = array_diff_key($refunds, array_flip($settled), array_flip(is_array($own) ? $own : []));
+            $difference = round(min(array_sum($new), array_sum($refunds) - $edd_refunded), $decimals);
+        }
         if ($difference <= 0) {
             return 'refunds already in sync';
         }
@@ -217,9 +229,20 @@ final class Webhooks
             return 'nothing left to refund';
         }
         $refund = Refunds::recordExternal($order, $difference);
+        if (ExternalRefunds::refused($order_id, $refund)) {
+            if (!$settled) {
+                // The event may be older than the list, so the list's total counts.
+                $refunds = self::refundsOf($intent_id, $mode, $currency);
+                $difference = round(min(array_sum($refunds) - $edd_refunded, $remaining), $decimals);
+            }
+            return 'order ' . $order_id . ': ' . self::leaveToMerchant($order, $refunds, $settled, $difference, $refund);
+        }
+        if ($settled && !is_wp_error($refund) && $refund) {
+            Orders::updateMeta($order_id, Payments::META_REFUNDS_SETTLED, array_values(array_unique(array_merge($settled, array_map('strval', array_keys($refunds))))));
+        }
         if (is_wp_error($refund)) {
             // EDD could not split the amount over the items: keep the books honest with a status and a note.
-            Orders::setStatus($order_id, 'partially_refunded');
+            ExternalRefunds::markPartlyRefunded($order_id);
             /* translators: 1: refunded amount, 2: reason */
             Orders::note($order_id, sprintf(__('A %1$s refund was made in Stripe but could not be recorded in EDD: %2$s', 'stackless-lite-edd'), wp_strip_all_tags(stackless_edd_price($difference, $currency)), $refund->get_error_message()));
             return 'order ' . $order_id . ': refund noted';
@@ -233,6 +256,63 @@ final class Webhooks
         /* translators: %s: refunded amount */
         Orders::note($order_id, sprintf(__('Recorded a %s refund made in Stripe.', 'stackless-lite-edd'), wp_strip_all_tags(stackless_edd_price($difference, $currency))));
         return 'order ' . $order_id . ': refund recorded';
+    }
+
+    /**
+     * The refunds of a payment that took money back, newest first as Stripe lists them.
+     *
+     * @return array<string,float> refund id => amount
+     */
+    private static function refundsOf(string $intent_id, string $mode, string $currency): array
+    {
+        $list = Settings::client($mode)->get('refunds', ['payment_intent' => $intent_id, 'limit' => 100]);
+        if (empty($list['data']) || !is_array($list['data'])) {
+            throw new \RuntimeException('Stripe listed no refunds for a refunded payment; retry later.');
+        }
+        $refunds = [];
+        foreach ($list['data'] as $refund) {
+            if (is_array($refund) && !empty($refund['id']) && !in_array($refund['status'] ?? '', ['failed', 'canceled'], true)) {
+                $refunds[(string) $refund['id']] = (float) Amount::fromMinor((int) ($refund['amount'] ?? 0), $currency);
+            }
+        }
+        return $refunds;
+    }
+
+    /**
+     * Note each refund the store refused, by its own id. The newest ones are those EDD lacks; a
+     * refund this site sent is named only when nothing else explains the amount.
+     *
+     * @param array<string,float> $refunds newest first
+     * @param string[]            $settled
+     * @param mixed               $result  What recording returned.
+     */
+    private static function leaveToMerchant(\EDD\Orders\Order $order, array $refunds, array $settled, float $left, $result): string
+    {
+        $order_id = (int) $order->id;
+        $decimals = stackless_edd_price_decimals((string) $order->currency);
+        $own = Orders::meta($order_id, Payments::META_REFUNDS);
+        $own = array_flip(is_array($own) ? $own : []);
+        $open = array_diff_key($refunds, array_flip($settled));
+        $parts = [];
+        foreach (array_diff_key($open, $own) + array_intersect_key($open, $own) as $id => $amount) {
+            if ($left <= 0) {
+                break;
+            }
+            $parts[$id] = min($amount, $left);
+            $left = round($left - $parts[$id], $decimals);
+        }
+        // The rest are in EDD already. Each of these is settled once it is saved, so a retry after a
+        // failed save neither repeats one nor records it as a refund.
+        $done = array_values(array_unique(array_merge($settled, array_map('strval', array_keys(array_diff_key($refunds, $parts))))));
+        foreach ($parts as $id => $part) {
+            if (!ExternalRefunds::leftToMerchant('Stripe', $order, $part, (string) $id, $result)) {
+                // The store's answer changed meanwhile: the next delivery finds this one new.
+                throw new \RuntimeException('The store filter changed its answer; retry later.', (int) self::DEFERRED);
+            }
+            $done[] = (string) $id;
+            Orders::updateMeta($order_id, Payments::META_REFUNDS_SETTLED, $done);
+        }
+        return $parts ? 'refund left to the merchant' : 'refunds already in sync';
     }
 
     /** @param array<string,mixed> $dispute */

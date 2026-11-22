@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\RazorpayGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -23,6 +24,12 @@ final class Sync
             $ids[] = $refundId;
             Orders::setMeta($orderId, Gateway::META_REFUND_IDS, array_values($ids));
         }
+    }
+
+    /** Undo rememberRefund(), for a refund that has to be delivered again. */
+    public static function forgetRefund(int $orderId, string $refundId): void
+    {
+        Orders::setMeta($orderId, Gateway::META_REFUND_IDS, array_values(array_diff(self::knownRefunds($orderId), [$refundId])));
     }
 
     /** @return string[] */
@@ -57,7 +64,7 @@ final class Sync
         }
         $outcome = self::verifyReturn($order, $paymentId, $rzpOrder, $signature);
         $order = Orders::get($orderId);
-        if ($order && (Orders::isPaid($order) || Orders::hasStatus($order, 'on_hold') || in_array($outcome, ['paid', 'awaiting_mandate', 'busy'], true))) {
+        if ($order && (Orders::isPaid($order) || Orders::hasStatus($order, 'on_hold') || in_array($outcome, ['paid', 'paid_before', 'awaiting_mandate', 'busy'], true))) {
             edd_empty_cart();
             if (function_exists('EDD') && EDD()->session) {
                 EDD()->session->set('edd_resume_payment', null);
@@ -127,7 +134,7 @@ final class Sync
      * Apply a Razorpay payment entity to an order (return, webhook or renewal).
      *
      * @param array<string,mixed> $payment
-     * @return string paid|awaiting_mandate|pending|failed|mismatch|ignored…|busy
+     * @return string paid|paid_before|awaiting_mandate|pending|failed|mismatch|ignored…|busy
      */
     public static function applyPayment(Order $order, array $payment, string $mode): string
     {
@@ -190,8 +197,11 @@ final class Sync
     {
         $orderId = (int) $order->id;
         $paymentId = (string) ($payment['id'] ?? '');
-        if (Orders::isPaid($order)) {
+        if (Orders::isPaid($order) || ExternalRefunds::heldAfterPayment($order)) {
             return 'paid';
+        }
+        if (Orders::paidWith($order, $paymentId)) {
+            return 'paid_before'; // A replay. The order left "paid" for a reason, and this is no new money.
         }
         $currency = strtoupper((string) $order->currency);
         $expected = (int) Orders::metaString($orderId, Gateway::META_AMOUNT);
@@ -209,7 +219,14 @@ final class Sync
             if (Orders::metaString($orderId, Gateway::META_FIRST_DEBIT) !== '' && Orders::hasStatus($order, 'on_hold')) {
                 return 'awaiting_mandate';
             }
-            $token = self::saveToken($payment, $order, $mode);
+            $refused = null;
+            $token = self::saveToken($payment, $order, $mode, $refused);
+            $orderMinor = Money::toMinor($order->total, $currency);
+            // An eNACH authorization takes ₹0, so by itself it never pays an order that costs money.
+            $nothingTaken = $expected <= 0 && $orderMinor > 0;
+            if (!$token && $nothingTaken) {
+                return self::withoutMandate($order, $paymentId, $refused);
+            }
             if (!$token) {
                 Orders::note($orderId, __('Razorpay did not return a recurring token for this payment, so renewals will be invoiced.', 'stackless-lite-edd'));
             } else {
@@ -218,8 +235,7 @@ final class Sync
                 Orders::setMeta($orderId, SubscriptionData::META_GATEWAY_CUSTOMER, $token->rzp_customer);
                 /* translators: %s: saved method */
                 Orders::note($orderId, sprintf(__('Saved %s for renewals.', 'stackless-lite-edd'), wp_strip_all_tags($token->displayName())));
-                $orderMinor = Money::toMinor($order->total, $currency);
-                if (Mandate::needsFirstDebit($token->method, $orderMinor)) {
+                if ($nothingTaken || Mandate::needsFirstDebit($token->method, $orderMinor)) {
                     // eNACH authorizes ₹0: the order's own amount is a separate debit.
                     Orders::setMeta($orderId, Gateway::META_FIRST_DEBIT, $token->token);
                     Orders::setStatus($orderId, 'on_hold', __('eNACH mandate registered. The first payment is debited once the bank confirms the mandate, usually within two working days.', 'stackless-lite-edd'));
@@ -242,11 +258,39 @@ final class Sync
         return 'paid';
     }
 
+    /**
+     * A ₹0 authorization with no mandate to debit. A refused mandate fails the order, so it can be paid
+     * again. With no clear answer the order waits on hold and the delivery is retried.
+     *
+     * @param string|null $refused rejected|cancelled, or null when Razorpay gave no clear answer.
+     */
+    private static function withoutMandate(Order $order, string $paymentId, ?string $refused): string
+    {
+        $orderId = (int) $order->id;
+        if (ExternalRefunds::wasPaid($order) || ExternalRefunds::heldWithRefund($order)) {
+            return 'ignored: order already settled';
+        }
+        if ($refused !== null) {
+            if (!Orders::hasStatus($order, 'failed')) {
+                Declines::record($orderId, ['category' => SubscriptionData::DECLINE_HARD, 'code' => 'mandate_' . $refused]);
+                Orders::setStatus($orderId, 'failed', $refused === 'rejected'
+                    ? __('The bank rejected the eNACH mandate, so the first payment was not debited.', 'stackless-lite-edd')
+                    : __('The bank cancelled the eNACH mandate, so the first payment was not debited.', 'stackless-lite-edd'));
+            }
+            return 'failed';
+        }
+        if (!Orders::hasStatus($order, 'on_hold')) {
+            /* translators: %s: Razorpay payment id */
+            Orders::setStatus($orderId, 'on_hold', sprintf(__('Razorpay registered %s for ₹0 and the eNACH mandate could not be read, so nothing has been paid. Do not deliver this order until its first payment is debited. If it stays on hold, check the mandate in Razorpay.', 'stackless-lite-edd'), $paymentId));
+        }
+        return 'busy'; // Razorpay retries the event, and the retry reads the mandate again.
+    }
+
     /** @param array<string,mixed> $payment */
     private static function failed(Order $order, array $payment): string
     {
         $orderId = (int) $order->id;
-        if (!Orders::needsPayment($order) && !Orders::hasStatus($order, 'on_hold')) {
+        if (!Orders::needsPayment($order) && (!Orders::hasStatus($order, 'on_hold') || ExternalRefunds::heldAfterPayment($order) || ExternalRefunds::heldWithRefund($order))) {
             return 'ignored: order already settled';
         }
         $decline = Declines::fromPayment($payment);
@@ -289,13 +333,13 @@ final class Sync
      *
      * @param array<string,mixed> $payment
      */
-    private static function saveToken(array $payment, Order $order, string $mode): ?PaymentToken
+    private static function saveToken(array $payment, Order $order, string $mode, ?string &$refused = null): ?PaymentToken
     {
-        return self::tokenFromPayment($payment, (int) $order->user_id, $mode, (int) $order->customer_id);
+        return self::tokenFromPayment($payment, (int) $order->user_id, $mode, (int) $order->customer_id, $refused);
     }
 
     /** @param array<string,mixed> $payment */
-    private static function tokenFromPayment(array $payment, int $userId, string $mode, int $eddCustomerId = 0): ?PaymentToken
+    private static function tokenFromPayment(array $payment, int $userId, string $mode, int $eddCustomerId = 0, ?string &$refused = null): ?PaymentToken
     {
         $tokenId = (string) ($payment['token_id'] ?? '');
         $customerId = (string) ($payment['customer_id'] ?? '');
@@ -308,6 +352,7 @@ final class Sync
             return null;
         }
         if (in_array(Tokens::statusOf($entity), ['rejected', 'cancelled'], true)) {
+            $refused = Tokens::statusOf($entity);
             return null;
         }
         return Tokens::saveFromEntity($entity, $userId, $customerId, $mode, $payment, $eddCustomerId);
@@ -391,11 +436,15 @@ final class Sync
             return 'ignored: no payment';
         }
         $order = Orders::findByMeta(Gateway::META_PAYMENT_ID, $paymentId, Gateway::ID);
+        $paidWith = $order !== null;
         if (!$order) {
-            return 'ignored: no matching order';
+            $order = self::heldForPayment($paymentId, $payment);
+            if (!$order) {
+                return 'ignored: no matching order';
+            }
         }
         $orderId = (int) $order->id;
-        return (string) Lock::run('order-' . $orderId, static function () use ($orderId, $event, $refund) {
+        return (string) Lock::run('order-' . $orderId, static function () use ($orderId, $event, $refund, $paidWith) {
             $order = Orders::get($orderId);
             if (!$order) {
                 return 'none';
@@ -413,8 +462,8 @@ final class Sync
             if ($refundId === '' || in_array($refundId, $known, true) || Orders::metaString($orderId, Gateway::META_VERIFICATION) === 'yes') {
                 return 'refund already recorded';
             }
-            if (!Orders::isPaid($order)) {
-                return 'ignored: order not paid';
+            if (!$paidWith || (!Orders::isPaid($order) && !ExternalRefunds::heldAfterPayment($order))) {
+                return self::leaveUnpaid($order, $refund) ? 'refund left to the merchant' : 'ignored: order not paid';
             }
             $remaining = function_exists('edd_get_order_total') ? (float) edd_get_order_total($orderId) : (float) $order->total;
             $amount = min(Money::fromMinor((int) ($refund['amount'] ?? 0), (string) $order->currency), $remaining);
@@ -423,7 +472,10 @@ final class Sync
                 return 'nothing left to refund';
             }
             $created = Refunds::recordExternal($order, $amount, $refundId);
-            return is_wp_error($created) ? 'refund not recorded: ' . $created->get_error_message() : 'refund recorded';
+            if (is_wp_error($created)) {
+                return 'refund not recorded: ' . $created->get_error_message();
+            }
+            return $created > 0 ? 'refund recorded' : 'refund not recorded';
         }, 'busy');
     }
 
@@ -455,7 +507,11 @@ final class Sync
         $orderId = (int) $order->id;
         $refundId = (string) ($refund['id'] ?? '');
         $fresh = Orders::get($orderId);
-        if ($refundId === '' || !$fresh || !Orders::isPaid($fresh) || in_array($refundId, self::knownRefunds($orderId), true)) {
+        if ($refundId === '' || !$fresh || in_array($refundId, self::knownRefunds($orderId), true)) {
+            return;
+        }
+        if (!Orders::isPaid($fresh) && !ExternalRefunds::heldAfterPayment($fresh)) {
+            self::leaveUnpaid($fresh, $refund);
             return;
         }
         $remaining = function_exists('edd_get_order_total') ? (float) edd_get_order_total($orderId) : (float) $fresh->total;
@@ -464,6 +520,42 @@ final class Sync
         if ($amount > 0) {
             Refunds::recordExternal($fresh, $amount, $refundId);
         }
+    }
+
+    /**
+     * The order a payment holds without paying it: a mismatch saves no payment id on the order.
+     *
+     * @param array<string,mixed> $payment
+     */
+    private static function heldForPayment(string $paymentId, array $payment): ?Order
+    {
+        $rzpOrder = (string) ($payment['order_id'] ?? '');
+        if ($rzpOrder === '' || (string) ($payment['id'] ?? '') !== $paymentId) {
+            return null;
+        }
+        $order = Orders::findByMeta(Gateway::META_ORDER_ID, $rzpOrder, Gateway::ID);
+        return $order && ExternalRefunds::heldBeforePayment($order) ? $order : null;
+    }
+
+    /**
+     * A refund of a payment that holds the order without paying it is not recorded. When the store
+     * refuses refunds it is the merchant's to record.
+     *
+     * @param array<string,mixed> $refund
+     */
+    private static function leaveUnpaid(Order $order, array $refund): bool
+    {
+        $id = (string) ($refund['id'] ?? '');
+        $minor = (int) ($refund['amount'] ?? 0);
+        if ($id === '' || $minor <= 0 || !ExternalRefunds::heldBeforePayment($order)) {
+            return false;
+        }
+        $currency = strtoupper((string) ($refund['currency'] ?? $order->currency));
+        if (!ExternalRefunds::leftToMerchant('Razorpay', $order, Money::fromMinor($minor, $currency), $id, null, null, $currency)) {
+            return false;
+        }
+        self::rememberRefund((int) $order->id, $id);
+        return true;
     }
 
     /**
@@ -498,7 +590,7 @@ final class Sync
         }
         if ($status === 'rejected' || $status === 'cancelled') {
             foreach ($waiting as $order) {
-                if ($order instanceof Order && (Orders::needsPayment($order) || Orders::hasStatus($order, 'on_hold'))) {
+                if ($order instanceof Order && !ExternalRefunds::heldAfterPayment($order) && !ExternalRefunds::heldWithRefund($order) && (Orders::needsPayment($order) || Orders::hasStatus($order, 'on_hold'))) {
                     Declines::record((int) $order->id, ['category' => SubscriptionData::DECLINE_HARD, 'code' => 'mandate_' . $status]);
                     Orders::setStatus((int) $order->id, 'failed', $status === 'rejected'
                         ? __('The bank rejected the eNACH mandate, so the first payment was not debited.', 'stackless-lite-edd')

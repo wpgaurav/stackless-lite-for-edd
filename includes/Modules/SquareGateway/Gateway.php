@@ -182,7 +182,7 @@ class Gateway extends \StacklessEDD\Core\Gateway implements SubscriptionGateway,
             'desc' => $this->webhookLine() . ' ' . sprintf(
                 /* translators: 1: webhook URL, 2: event names */
                 __('Created automatically when the signature key is empty. To add it by hand, open Webhooks → Subscriptions in your application, add this URL: %1$s with these events, and paste its signature key above: %2$s', 'stackless-lite-edd'),
-                '<br><code>' . esc_html($this->webhookUrl()) . '</code><br>',
+                '<br><code>' . esc_html($this->displayedWebhookUrl()) . '</code><br>',
                 '<br><code>' . implode('</code> <code>', array_map('esc_html', EventMap::EVENTS)) . '</code>'
             ),
         ];
@@ -349,6 +349,12 @@ class Gateway extends \StacklessEDD\Core\Gateway implements SubscriptionGateway,
     public function webhookUrl(): string
     {
         return rest_url(Webhook::REST_NAMESPACE . Webhook::ROUTE);
+    }
+
+    /** For settings text only: rest_url() fatals before $wp_rewrite exists, so the bare route until init. */
+    private function displayedWebhookUrl(): string
+    {
+        return did_action('init') ? $this->webhookUrl() : Webhook::REST_NAMESPACE . Webhook::ROUTE;
     }
 
     /** @return string[] google_pay and/or apple_pay */

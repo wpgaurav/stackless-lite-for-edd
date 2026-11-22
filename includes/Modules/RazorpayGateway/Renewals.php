@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\RazorpayGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 use StacklessEDD\Core\LiveStore;
 
 defined('ABSPATH') || exit;
@@ -91,10 +92,12 @@ final class Renewals
     private static function debit(Order $order, PaymentToken $token, string $flow): array
     {
         $orderId = (int) $order->id;
-        if (Orders::isPaid($order)) {
+        // A first debit is only for an order that was never paid.
+        if (Orders::isPaid($order) || ($flow === 'first' && ExternalRefunds::wasPaid($order))) {
             return ['result' => 'success'];
         }
-        if (!Orders::needsPayment($order) && !($flow === 'first' && Orders::hasStatus($order, 'on_hold'))) {
+        $awaitsFirst = $flow === 'first' && Orders::hasStatus($order, 'on_hold') && !ExternalRefunds::heldWithRefund($order);
+        if (!Orders::needsPayment($order) && !$awaitsFirst) {
             return Orders::hasStatus($order, ['on_hold', 'processing']) ? ['result' => 'pending'] : ['result' => 'failed', 'message' => __('The order cannot be paid in its current status.', 'stackless-lite-edd')];
         }
         $currency = strtoupper((string) $order->currency);
@@ -246,7 +249,7 @@ final class Renewals
         /* translators: 1: reason, 2: reason code */
         $note = sprintf(__('Razorpay debit failed: %1$s (%2$s)', 'stackless-lite-edd'), $message, $decline['code']);
         $fresh = Orders::get($orderId) ?? $order;
-        if (Orders::hasStatus($fresh, ['pending', 'on_hold', 'abandoned'])) {
+        if (Orders::hasStatus($fresh, ['pending', 'on_hold', 'abandoned']) && !ExternalRefunds::heldAfterPayment($fresh)) {
             Orders::setStatus($orderId, 'failed', $note);
         } else {
             Orders::note($orderId, $note);

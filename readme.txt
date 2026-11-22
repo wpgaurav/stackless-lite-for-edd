@@ -4,11 +4,11 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 2.0.3
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
-28 free modules for Easy Digital Downloads: Stripe, PayPal, Razorpay, Mollie, Square, Creem, Paystack, Flutterwave, Mercado Pago, Polar, Paddle and Dodo Payments, wishlists, saved carts, pay what you like and more.
+31 free modules for Easy Digital Downloads: Stripe, PayPal, Revolut, Airwallex (beta), Braintree, Razorpay, Mollie, Square, Creem, Paystack, Flutterwave, Mercado Pago, Polar, Paddle and Dodo Payments, wishlists, saved carts, pay what you like and more.
 
 == Description ==
 
@@ -39,6 +39,9 @@ Payments:
 * **Razorpay**: UPI, cards, netbanking and wallets with Razorpay Checkout, with refunds both ways and a signed webhook.
 * **Mollie**: cards, iDEAL, Bancontact, PayPal, Apple Pay and every other method in your Mollie account on Mollie's hosted checkout, with refunds both ways.
 * **Square**: cards, Apple Pay and Google Pay with Square's own payment form, cards saved on file with Square, and refunds both ways.
+* **Revolut**: cards, Revolut Pay and the other methods in your Revolut Merchant account on Revolut's hosted checkout, with cards saved for subscription renewals and refunds both ways.
+* **Braintree**: cards with 3-D Secure in Braintree's fields on your checkout, saved cards, refunds and voids, and a merchant account per currency.
+* **Airwallex (beta)**: cards, wallets and the local methods switched on in your Airwallex account, on Airwallex's hosted payment page, with refunds both ways. Beta because Airwallex's Checkout Session API is in beta.
 * **Creem**: Creem as a merchant of record for software and digital products, with hosted checkout and sales tax and VAT handled for you, in US dollars or euros.
 * **Paystack**: cards, bank transfer, USSD, mobile money and Apple Pay on Paystack's hosted checkout, for stores in Nigeria, Ghana, South Africa, Kenya and Côte d'Ivoire.
 * **Flutterwave**: cards, bank transfer, mobile money and USSD on Flutterwave's hosted checkout, with refunds both ways.
@@ -111,6 +114,18 @@ When a customer pays with Paddle, the checkout loads Paddle.js from cdn.paddle.c
 
 When a customer pays with Dodo Payments, your site creates a checkout through the Dodo Payments API (live.dodopayments.com, or test.dodopayments.com in test mode), sending the products, amount, currency, order ID and the customer's name and email, and sends the customer to Dodo's hosted checkout. Dodo Payments sends payment events back to your site's webhook. Dodo Payments' [Terms of Use](https://dodopayments.com/legal/terms-of-use) and [Privacy Policy](https://dodopayments.com/legal/privacy-policy) apply.
 
+= Revolut =
+
+When a customer pays with Revolut, your site creates an order through the Revolut Merchant API (merchant.revolut.com, or sandbox-merchant.revolut.com in test mode), sending the amount, currency, order ID and number, your site's name, item names and quantities, the customer's name and email, and the return address. The customer pays on checkout.revolut.com, or, to save a card, in Revolut's window loaded from the API host, which also receives the billing address. Card details go straight to Revolut and never reach your server. Revolut sends payment, refund and dispute events back to your site's webhook. Revolut's [Business Acquiring Terms](https://www.revolut.com/legal/business-acquiring/) and [Privacy Notice](https://www.revolut.com/legal/privacy/) apply.
+
+= Airwallex (beta) =
+
+When a customer pays with Airwallex, your site creates a Checkout Session through the Airwallex API (api.airwallex.com, or api.sandbox.airwallex.com in test mode), sending the amount, currency, order number and reference, the customer's name, email and country, the return addresses, and the plugin's version, and sends the customer to Airwallex's hosted checkout on airwallex.com. For saved cards and refunds it also sends the saved card's IDs and the refund reason. Card details go straight to Airwallex and never reach your server. Airwallex sends payment, refund and dispute events back to your site's webhook. Checkout Session is an API Airwallex labels beta. Airwallex's [Terms](https://www.airwallex.com/terms/sign-up-terms) and [Privacy Policy](https://www.airwallex.com/terms/privacy-policy) apply.
+
+= Braintree =
+
+When a customer pays with Braintree, the checkout loads Braintree's SDK from js.braintreegateway.com and its card fields from assets.braintreegateway.com, so card details go straight to Braintree and never reach your server. For 3-D Secure the browser sends Braintree the amount and the customer's name, email and billing address, and Braintree shows the bank's check. Your site creates the payment through the Braintree API (payments.braintree-api.com and api.braintreegateway.com, or their sandbox hosts), sending the amount, currency, an order reference, the customer's email, the billing name and address, for saved cards a Braintree customer (name and email), refund amounts, and the plugin's version. The order reference carries a hashed marker of your site. Braintree's SDK also sends browser and usage data to Braintree and www.paypal.com, and 3-D Secure contacts CardinalCommerce and the card's issuer. If you turn on Fraud tools, the checkout also loads PayPal's device scripts from c.paypal.com and b.stats.paypal.com and passes their device data to Braintree. Braintree sends dispute and settlement events back to your site's webhook. Braintree's [agreements and policies](https://www.braintreepayments.com/legal) and PayPal's [Privacy Statement](https://www.paypal.com/us/legalhub/privacy-full) apply.
+
 = Links =
 
 * [Product page and free download](https://gauravtiwari.org/product/stackless-lite-for-edd/)
@@ -152,6 +167,21 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 2.1.0 =
+* New: Revolut gateway, with Revolut's hosted checkout, refunds both ways and a signed webhook.
+* New: Airwallex gateway (beta), with hosted checkout for cards and local methods, refunds and disputes. Airwallex's Checkout Session API is itself in beta.
+* New: Braintree gateway, with card fields and 3-D Secure on your checkout, refunds, voids and disputes.
+* Fixed: Square's settings no longer cause a fatal error when another plugin loads payment gateways early.
+* Fixed: a refund is no longer sent to the payment provider when EDD would refuse to record it.
+* Fixed: a refund made at the provider that your store's refund filter refuses gets an order note and an admin notice, so you can record it by hand. Before, EDD showed nothing.
+* Fixed: a partial refund no longer takes an order off hold or reopens its downloads, whether you start it or it is synced from the provider.
+* Fixed: a returning buyer or a repeated payment event no longer lifts a hold placed after payment in Paystack, Flutterwave, Dodo Payments, Creem, Paddle and PayPal.
+* Fixed: on EDD versions before 3.7.1, a refund with the gateway's box ticked is refused before anything is recorded or sent, with instructions to refund at the provider. Before, it could stop with an error, or money and records could disagree.
+* Fixed: releasing a PayPal authorization captures the total less refunds. Before, it could capture the original total after a refund.
+* Fixed: a Razorpay event no longer debits, fails or completes an order put on hold after it was paid.
+* Fixed: with Hide Price Until Login on, a signed-out customer can pay a renewal or invoice from its pay link.
+* Changed: Stripe restricted keys need permission to read refunds, so a refund your store's filter refuses can be identified.
 
 = 2.0.3 =
 * Fixed: one-time checkout with Creem no longer sends a billing field that Creem rejects, and a product archived in Creem no longer blocks checkout.

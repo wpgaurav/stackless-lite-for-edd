@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\SquareGateway;
 
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\ExternalRefunds;
 use StacklessEDD\Core\LiveStore;
 
 defined('ABSPATH') || exit;
@@ -361,7 +362,8 @@ final class Payments
             }
             $status = (string) ($payment['status'] ?? '');
             if ($status === 'COMPLETED' || $status === 'APPROVED') {
-                if (Orders::isPaid($order)) {
+                // Square sends payment.updated with every refund: it never releases a dispute's hold.
+                if (Orders::isPaid($order) || ExternalRefunds::heldAfterPayment($order)) {
                     return 'paid';
                 }
                 if (!Money::matches($payment['amount_money'] ?? null, (string) $order->total, (string) $order->currency)) {
@@ -547,6 +549,12 @@ final class Payments
                 return 'nothing left to refund';
             }
             $created = Refunds::recordExternal($order, $amount);
+            $forget = static function () use ($order_id, $refund_id) {
+                Orders::updateMeta($order_id, Gateway::META_REFUND_IDS, array_values(array_diff(self::knownRefunds($order_id), [$refund_id])));
+            };
+            if (ExternalRefunds::leftToMerchant('Square', $order, $amount, $refund_id, $created, $forget)) {
+                return 'refund left to the merchant';
+            }
             if (is_wp_error($created) || !$created) {
                 return 'refund not recorded: ' . (is_wp_error($created) ? $created->get_error_message() : 'EDD refused it');
             }

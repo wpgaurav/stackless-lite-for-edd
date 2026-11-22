@@ -178,22 +178,38 @@ final class ExtraPayments
         if (!$all) {
             return;
         }
-        // Shown on every admin screen, most of which load no Stackless stylesheet: a tinted box, 1px all round.
-        echo '<style>div.notice.stackless-extra-payments{border:1px solid #e6a7a9;border-radius:2px;background:#fcf0f1;box-shadow:none}</style>';
-        // edd-notice: without it EDD hides the notice on its own screens, Orders among them.
-        echo '<div class="notice edd-notice notice-error stackless-extra-payments"><p><strong>' . esc_html__('Payments that may need a refund', 'stackless-lite-edd') . '</strong></p><ul>';
+        $items = [];
         foreach (array_slice($all, 0, 20, true) as $paymentId => $row) {
             $paymentId = (string) $paymentId;
             $order = admin_url('edit.php?post_type=download&page=edd-payment-history&view=view-order-details&id=' . (int) ($row['order'] ?? 0));
             $done = wp_nonce_url(admin_url('admin-post.php?action=' . self::ACTION . '&payment=' . rawurlencode($paymentId)), self::ACTION . $paymentId);
-            echo '<li>' . esc_html(self::sentence($paymentId, (array) $row))
+            $items[] = esc_html(self::sentence($paymentId, (array) $row))
                 . ' <a href="' . esc_url($order) . '">' . esc_html__('View order', 'stackless-lite-edd') . '</a>'
-                . ' | <a href="' . esc_url($done) . '">' . esc_html__('Mark as handled', 'stackless-lite-edd') . '</a></li>';
+                . ' | <a href="' . esc_url($done) . '">' . esc_html__('Mark as handled', 'stackless-lite-edd') . '</a>';
+        }
+        self::box(__('Payments that may need a refund', 'stackless-lite-edd'), $items, count($all));
+    }
+
+    /**
+     * The notice for money only the merchant can settle (ExternalRefunds prints one too).
+     *
+     * @internal
+     * @param string[] $items Escaped HTML, one per row.
+     * @param int      $total How many there are, the rows shown included.
+     */
+    public static function box(string $heading, array $items, int $total): void
+    {
+        // Shown on every admin screen, most of which load no Stackless stylesheet: a tinted box, 1px all round.
+        echo '<style>div.notice.stackless-extra-payments{border:1px solid #e6a7a9;border-radius:2px;background:#fcf0f1;box-shadow:none}</style>';
+        // edd-notice: without it EDD hides the notice on its own screens, Orders among them.
+        echo '<div class="notice edd-notice notice-error stackless-extra-payments"><p><strong>' . esc_html($heading) . '</strong></p><ul>';
+        foreach ($items as $item) {
+            echo '<li>' . $item . '</li>'; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escaped by the callers, piece by piece.
         }
         echo '</ul>';
-        if (count($all) > 20) {
-            /* translators: %d: how many more payments */
-            echo '<p>' . esc_html(sprintf(__('And %d more.', 'stackless-lite-edd'), count($all) - 20)) . '</p>';
+        if ($total > count($items)) {
+            /* translators: %d: how many more payments or refunds */
+            echo '<p>' . esc_html(sprintf(__('And %d more.', 'stackless-lite-edd'), $total - count($items))) . '</p>';
         }
         echo '</div>';
     }

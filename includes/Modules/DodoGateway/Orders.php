@@ -3,6 +3,7 @@
 namespace StacklessEDD\Modules\DodoGateway;
 
 use EDD\Orders\Order;
+use StacklessEDD\Core\ExternalRefunds;
 
 defined('ABSPATH') || exit;
 
@@ -22,9 +23,10 @@ final class Orders
         return $order instanceof Order ? $order : null;
     }
 
+    /** Paid by its status, or on hold since it was paid. */
     public static function isPaid(Order $order): bool
     {
-        return in_array((string) $order->status, self::PAID, true);
+        return in_array((string) $order->status, self::PAID, true) || ExternalRefunds::heldAfterPayment($order);
     }
 
     public static function meta(int $id, string $key): string
@@ -192,7 +194,7 @@ final class Orders
         add_filter('edd_is_order_refundable_by_override', $override, 10, 2);
         Refunds::$mirroring = true;
         try {
-            return edd_refund_order($orderId, $items, $adjustments);
+            return ExternalRefunds::record($orderId, $items, $adjustments);
         } finally {
             Refunds::$mirroring = false;
             remove_filter('edd_is_order_refundable_by_override', $override, 10);
