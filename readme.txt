@@ -4,7 +4,7 @@ Tags: easy digital downloads, stripe, paypal, wishlist, pay what you want
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.0
-Stable tag: 2.1.0
+Stable tag: 2.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -167,6 +167,9 @@ No. Data is kept unless you define `STACKLESS_EDD_REMOVE_ALL_DATA` as `true` in 
 From gauravtiwari.org, without a license key. Updates show up on Dashboard → Updates like any other plugin, and each package is checked against its published SHA-256 checksum before it installs.
 
 == Changelog ==
+
+= 2.1.1 =
+* Aligned the Lite release version with Stackless for EDD Pro 2.1.1. The functional fixes in this release apply to Pro modules.
 
 = 2.1.0 =
 * New: Revolut gateway, with Revolut's hosted checkout, refunds both ways and a signed webhook.
