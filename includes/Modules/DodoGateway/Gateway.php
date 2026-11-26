@@ -30,6 +30,11 @@ class Gateway extends BaseGateway implements SubscriptionGateway
     public const META_MODE = '_stackless_edd_dodo_mode';
     public const META_AMOUNT = '_stackless_edd_dodo_amount';
     public const META_PRODUCT_ID = '_stackless_edd_dodo_product_id';
+    /** What Dodo should charge for the first payment: META_AMOUNT less any first-payment discount. */
+    public const META_EXPECTED = '_stackless_edd_dodo_expected';
+    public const META_DISCOUNT_CODE = '_stackless_edd_dodo_discount_code';
+    public const META_DISCOUNT_AMOUNT = '_stackless_edd_dodo_discount_amount';
+    public const META_DISCOUNT_PRODUCT = '_stackless_edd_dodo_discount_product';
     public const META_TAX_INCLUSIVE = '_stackless_edd_dodo_tax_inclusive';
     public const META_PAYMENT_ID = '_stackless_edd_dodo_payment_id';
     public const META_TAX = '_stackless_edd_dodo_tax_amount';

@@ -175,7 +175,7 @@ final class Settings
             'id' => self::id('limits_section', $id),
             'title' => __('Good to know', 'stackless-lite-edd'),
             'type' => 'title',
-            'desc' => __('Dodo bills the same amount every cycle, so subscriptions with a signup fee or a different first payment cannot use Dodo. Free trials work. A subscription must be the only item in the cart. One-time carts of any size work and show in Dodo as one store order. Products are created in your Dodo catalog automatically: one per download for one-time sales, one per plan and price for subscriptions. Dodo runs the renewal schedule; renewals it charges become paid EDD renewal orders.', 'stackless-lite-edd'),
+            'desc' => __('Dodo bills the same amount every cycle, so subscriptions with a signup fee or a first payment above the renewal price cannot use Dodo. A discount that lowers only the first payment is sent to Dodo as a one-cycle discount, and renewals bill the full price. Free trials work. A subscription must be the only item in the cart. One-time carts of any size work and show in Dodo as one store order. Products are created in your Dodo catalog automatically: one per download for one-time sales, one per plan and price for subscriptions. Dodo runs the renewal schedule; renewals it charges become paid EDD renewal orders.', 'stackless-lite-edd'),
         ];
         $fields[] = ['id' => self::id('limits_section', $id), 'type' => 'sectionend'];
 

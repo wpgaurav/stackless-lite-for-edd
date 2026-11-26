@@ -4,6 +4,7 @@ namespace StacklessEDD\Modules\PolarGateway;
 
 use EDD\Orders\Order;
 use StacklessEDD\Contracts\SubscriptionData;
+use StacklessEDD\Core\FirstPayment;
 
 defined('ABSPATH') || exit;
 
@@ -26,12 +27,12 @@ class Checkout
     /**
      * What Polar should bill for an order.
      *
-     * @return array{recurring:?array,amount:float,trial_days:int,subscription:?SubscriptionData}|\WP_Error
+     * @return array{recurring:?array,amount:float,trial_days:int,subscription:?SubscriptionData,discount:int}|\WP_Error
      */
     public function plan(Order $order)
     {
         $orderId = (int) $order->id;
-        $oneTime = ['recurring' => null, 'amount' => (float) $order->total, 'trial_days' => 0, 'subscription' => null];
+        $oneTime = ['recurring' => null, 'amount' => (float) $order->total, 'trial_days' => 0, 'subscription' => null, 'discount' => 0];
 
         if (stackless_edd_is_renewal_order($orderId) || !stackless_edd_order_contains_subscription($orderId)) {
             return $oneTime;
@@ -64,12 +65,26 @@ class Checkout
         }
 
         $trialDays = self::trialDays($subscription->get_trial_end_date(), time());
-        $expectedFirst = $trialDays > 0 ? 0.0 : $amount;
-        if (!Money::equals((float) $order->total, $expectedFirst, (string) $order->currency)) {
-            return new \WP_Error('stackless_edd_polar_first_payment', __('Polar charges the same amount on every billing cycle, so it cannot take a signup fee or a different first payment. Remove the signup fee or first-payment discount, or choose another payment method.', 'stackless-lite-edd'));
+        $discount = self::firstPaymentDiscount((float) $order->total, $amount, $trialDays, (string) $order->currency);
+        if ($discount === null) {
+            return new \WP_Error('stackless_edd_polar_first_payment', $trialDays > 0
+                ? __('Polar cannot charge a payment during a free trial. Remove the signup fee, or choose another payment method.', 'stackless-lite-edd')
+                : __('Polar charges the same amount on every billing cycle, so it cannot take a signup fee or a first payment above the renewal price. Remove the signup fee, or choose another payment method.', 'stackless-lite-edd'));
         }
 
-        return ['recurring' => $recurring, 'amount' => $amount, 'trial_days' => $trialDays, 'subscription' => $subscription];
+        return ['recurring' => $recurring, 'amount' => $amount, 'trial_days' => $trialDays, 'subscription' => $subscription, 'discount' => $discount];
+    }
+
+    /**
+     * Polar bills one price every cycle: a lower first payment becomes a one-invoice discount
+     * (minor units); a higher one, or a payment during a free trial, cannot (null).
+     */
+    public static function firstPaymentDiscount(float $orderTotal, float $recurringTotal, int $trialDays, string $currency): ?int
+    {
+        if ($trialDays > 0) {
+            return Money::equals($orderTotal, 0.0, $currency) ? 0 : null;
+        }
+        return FirstPayment::discount(Money::toMinor($orderTotal, $currency), Money::toMinor($recurringTotal, $currency));
     }
 
     /**
@@ -110,7 +125,8 @@ class Checkout
         }
 
         $minor = Money::toMinor($plan['amount'], $currency);
-        $reused = $this->reusable($orderId, $mode, $minor, $currency);
+        $discount = (int) $plan['discount'];
+        $reused = $this->reusable($orderId, $mode, $minor, $currency, $discount);
         if ($reused !== '') {
             return $reused;
         }
@@ -122,8 +138,13 @@ class Checkout
             return $productId;
         }
 
+        $discountId = $this->discountId($orderId, $productId, $currency, $discount, $minor, $defaultPrice, $mode);
+        if (is_wp_error($discountId)) {
+            return $discountId;
+        }
+
         $api = $this->gateway->api($mode);
-        $checkout = $api->request('POST', 'checkouts/', $this->body($order, $productId, $minor, $currency, $plan, $defaultPrice));
+        $checkout = $api->request('POST', 'checkouts/', $this->body($order, $productId, $minor, $currency, $plan, $defaultPrice, $discountId));
 
         // A product archived or deleted in Polar is recreated once.
         if (is_wp_error($checkout) && Api::isProductError($checkout)) {
@@ -132,7 +153,12 @@ class Checkout
             if (is_wp_error($productId)) {
                 return $productId;
             }
-            $checkout = $api->request('POST', 'checkouts/', $this->body($order, $productId, $minor, $currency, $plan, $defaultPrice));
+            // The discount is limited to the old product, so the new one gets its own.
+            $discountId = $this->discountId($orderId, $productId, $currency, $discount, $minor, $defaultPrice, $mode, true);
+            if (is_wp_error($discountId)) {
+                return $discountId;
+            }
+            $checkout = $api->request('POST', 'checkouts/', $this->body($order, $productId, $minor, $currency, $plan, $defaultPrice, $discountId));
         }
         if (is_wp_error($checkout)) {
             $this->gateway->log('Checkout for order ' . $orderId . ' failed: ' . $checkout->get_error_message(), 'error');
@@ -146,6 +172,9 @@ class Checkout
         Orders::setMeta($orderId, Gateway::META_CHECKOUT_ID, (string) $checkout['id']);
         Orders::setMeta($orderId, Gateway::META_MODE, $mode);
         Orders::setMeta($orderId, Gateway::META_AMOUNT, (string) $minor);
+        Orders::setMeta($orderId, Gateway::META_DISCOUNT_ID, $discountId);
+        Orders::setMeta($orderId, Gateway::META_DISCOUNT_AMOUNT, (string) $discount);
+        Orders::setMeta($orderId, Gateway::META_DISCOUNT_PRODUCT, $discountId !== '' ? $productId : '');
         $this->gateway->log('Started Polar checkout ' . $checkout['id'] . ' for order ' . $orderId . '.');
         return (string) $checkout['url'];
     }
@@ -161,7 +190,63 @@ class Checkout
         return $url . (strpos($url, '?') === false ? '?' : '&') . 'checkout_id={CHECKOUT_ID}';
     }
 
-    private function body(Order $order, string $productId, int $minor, string $currency, array $plan, ?array $defaultPrice): array
+    /**
+     * A one-invoice Polar discount for a first payment below the renewal price, reused while the
+     * order is retried for the same amount, product and mode. '' when nothing is discounted.
+     *
+     * @param array{currency:string,amount:int}|null $defaultPrice
+     * @return string|\WP_Error
+     */
+    private function discountId(int $orderId, string $productId, string $currency, int $discount, int $recurringMinor, ?array $defaultPrice, string $mode, bool $refresh = false)
+    {
+        if ($discount <= 0) {
+            return '';
+        }
+        $known = Orders::meta($orderId, Gateway::META_DISCOUNT_ID);
+        if (!$refresh && $known !== '' && (int) Orders::meta($orderId, Gateway::META_DISCOUNT_AMOUNT) === $discount
+            && Orders::meta($orderId, Gateway::META_DISCOUNT_PRODUCT) === $productId && Orders::meta($orderId, Gateway::META_MODE) === $mode) {
+            return $known;
+        }
+
+        $created = $this->gateway->api($mode)->request('POST', 'discounts/', self::discountBody($orderId, $productId, $currency, $discount, $recurringMinor, $defaultPrice));
+        if (is_wp_error($created)) {
+            $this->gateway->log('First-payment discount for order ' . $orderId . ' failed: ' . $created->get_error_message(), 'error');
+            return $created;
+        }
+        if (empty($created['id'])) {
+            return new \WP_Error('stackless_edd_polar_discount', __('Polar did not create the first-payment discount.', 'stackless-lite-edd'));
+        }
+        return (string) $created['id'];
+    }
+
+    /**
+     * Fixed, first invoice only, one redemption, this product only. When the checkout also carries
+     * a default-currency price, the discount gets the same share of it.
+     *
+     * @param array{currency:string,amount:int}|null $defaultPrice
+     */
+    public static function discountBody(int $orderId, string $productId, string $currency, int $discount, int $recurringMinor, ?array $defaultPrice): array
+    {
+        $amounts = [strtolower($currency) => $discount];
+        if ($defaultPrice && strtolower((string) $defaultPrice['currency']) !== strtolower($currency)) {
+            $amounts[strtolower((string) $defaultPrice['currency'])] = FirstPayment::scale($discount, $recurringMinor, (int) $defaultPrice['amount']);
+        }
+        return [
+            'name' => FirstPayment::label($orderId),
+            'type' => 'fixed',
+            'duration' => 'once',
+            'amounts' => $amounts,
+            'max_redemptions' => 1,
+            'products' => [$productId],
+            'metadata' => array_filter([
+                'edd_order_id' => (string) $orderId,
+                'edd_site' => Catalog::siteHost(),
+            ]),
+        ];
+    }
+
+    /** @param array{currency:string,amount:int}|null $defaultPrice */
+    private function body(Order $order, string $productId, int $minor, string $currency, array $plan, ?array $defaultPrice, string $discountId = ''): array
     {
         $orderId = (int) $order->id;
         $price = ['amount_type' => 'fixed', 'price_amount' => $minor, 'price_currency' => $currency];
@@ -188,6 +273,10 @@ class Checkout
                 'edd_site' => Catalog::siteHost(),
             ]),
         ];
+        if ($discountId !== '') {
+            // Applied with discount codes off; the buyer cannot change it.
+            $body['discount_id'] = $discountId;
+        }
         if ($plan['recurring'] !== null && $plan['trial_days'] > 0) {
             $body['trial_interval'] = 'day';
             $body['trial_interval_count'] = $plan['trial_days'];
@@ -219,10 +308,11 @@ class Checkout
     }
 
     /** Reuse an open checkout for the same order and amount (double submits, back button). */
-    private function reusable(int $orderId, string $mode, int $minor, string $currency): string
+    private function reusable(int $orderId, string $mode, int $minor, string $currency, int $discount): string
     {
         $checkoutId = Orders::meta($orderId, Gateway::META_CHECKOUT_ID);
-        if ($checkoutId === '' || Orders::meta($orderId, Gateway::META_MODE) !== $mode || (int) Orders::meta($orderId, Gateway::META_AMOUNT) !== $minor) {
+        if ($checkoutId === '' || Orders::meta($orderId, Gateway::META_MODE) !== $mode || (int) Orders::meta($orderId, Gateway::META_AMOUNT) !== $minor
+            || (int) Orders::meta($orderId, Gateway::META_DISCOUNT_AMOUNT) !== $discount) {
             return '';
         }
         $checkout = $this->gateway->api($mode)->request('GET', 'checkouts/' . rawurlencode($checkoutId));

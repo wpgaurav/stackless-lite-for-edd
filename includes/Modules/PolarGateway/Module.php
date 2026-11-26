@@ -89,7 +89,7 @@ final class Module extends BaseModule
                     'id' => Gateway::OPTION_PREFIX . 'limits_section',
                     'type' => 'title',
                     'title' => __('Good to know', 'stackless-lite-edd'),
-                    'desc' => __('Polar sells one product per checkout. One-time carts of any size work and show in Polar as one store order. A subscription must be the only item in the cart, and Polar bills the same amount every cycle, so subscriptions with a signup fee or a different first payment cannot use Polar. Free trials work. Polar runs the renewal schedule; renewals it charges become paid EDD renewal orders.', 'stackless-lite-edd'),
+                    'desc' => __('Polar sells one product per checkout. One-time carts of any size work and show in Polar as one store order. A subscription must be the only item in the cart, and Polar bills the same amount every cycle, so subscriptions with a signup fee or a first payment above the renewal price cannot use Polar. A discount that lowers only the first payment is sent to Polar as a one-invoice discount, and renewals bill the full price. Free trials work. Polar runs the renewal schedule; renewals it charges become paid EDD renewal orders.', 'stackless-lite-edd'),
                 ];
                 $fields[] = ['id' => Gateway::OPTION_PREFIX . 'limits_section', 'type' => 'sectionend'];
             }

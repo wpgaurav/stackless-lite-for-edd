@@ -216,7 +216,7 @@ class Sync
             $currency = $currency !== '' ? $currency : $orderCurrency;
             self::storeAmounts($orderId, $payment, $currency, $mode);
 
-            $expected = (int) Orders::meta($orderId, Gateway::META_AMOUNT) ?: Money::toMinor($order->total, $currency);
+            $expected = (int) (Orders::meta($orderId, Gateway::META_EXPECTED) ?: Orders::meta($orderId, Gateway::META_AMOUNT)) ?: Money::toMinor($order->total, $currency);
             if (!Money::paidMatches($payment, $expected)) {
                 Orders::hold($order, sprintf(
                     /* translators: 1: amount Dodo charged, 2: order total */
